@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-multipart
+markdown
+weasyprint
+pydantic
+python-dotenv
