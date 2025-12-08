@@ -129,113 +129,113 @@ function hello() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-7xl mx-auto">
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-            <FileText className="h-8 w-8" />
+    <div className="h-screen bg-background p-6 flex flex-col">
+      <div className="max-w-[1400px] mx-auto w-full flex flex-col h-full">
+        <header className="mb-4 flex-shrink-0">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <FileText className="h-6 w-6" />
             Markdown to PDF Converter
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Конвертируйте Markdown в PDF с настраиваемыми стилями в реальном времени
-          </p>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_260px] gap-4 flex-1 min-h-0">
           {/* Редактор Markdown */}
-          <div className="xl:col-span-2">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Markdown Editor</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    value={markdownContent}
-                    onChange={(e) => setMarkdownContent(e.target.value)}
-                    placeholder="Введите ваш Markdown текст здесь..."
-                    className="min-h-[500px] font-mono"
-                  />
-                </CardContent>
-              </Card>
+          <Card className="flex flex-col">
+            <CardHeader className="py-3 flex-shrink-0">
+              <CardTitle className="text-base">Markdown Editor</CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 flex-1 min-h-0">
+              <Textarea
+                value={markdownContent}
+                onChange={(e) => setMarkdownContent(e.target.value)}
+                placeholder="Введите ваш Markdown текст здесь..."
+                className="h-full font-mono text-sm resize-none"
+              />
+            </CardContent>
+          </Card>
 
-              {/* Предпросмотр PDF */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>PDF Preview</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {isLoading && (
-                    <div className="flex items-center justify-center h-[500px]">
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-                        <p className="text-sm text-muted-foreground">Генерация PDF...</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {error && (
-                    <div className="flex items-center justify-center h-[500px]">
-                      <div className="text-center">
-                        <p className="text-sm text-destructive mb-2">Ошибка генерации PDF</p>
-                        <p className="text-xs text-muted-foreground">{error}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {pdfData && !isLoading && !error && (
-                    <div className="h-[500px] border rounded-md overflow-hidden">
-                      <iframe
-                        src={`data:application/pdf;base64,${pdfData}`}
-                        className="w-full h-full"
-                        title="PDF Preview"
-                      />
-                    </div>
-                  )}
-                  
-                  {!pdfData && !isLoading && !error && (
-                    <div className="flex items-center justify-center h-[500px] border rounded-md bg-muted/50">
-                      <div className="text-center">
-                        <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">PDF появится здесь</p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+          {/* Предпросмотр PDF */}
+          <Card className="flex flex-col">
+            <CardHeader className="py-3 flex-shrink-0 flex flex-row items-center justify-between">
+              <CardTitle className="text-base">PDF Preview</CardTitle>
+              <Button
+                onClick={downloadPdf}
+                disabled={!pdfData || isLoading}
+                size="icon"
+                className="h-8 w-8"
+                title="Скачать PDF"
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-3 flex-1 min-h-0">
+              {isLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                    <p className="text-sm text-muted-foreground">Генерация PDF...</p>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <p className="text-sm text-destructive mb-2">Ошибка генерации PDF</p>
+                    <p className="text-xs text-muted-foreground">{error}</p>
+                  </div>
+                </div>
+              )}
+
+              {pdfData && !isLoading && !error && (
+                <div className="h-full border rounded-md overflow-hidden">
+                  <iframe
+                    src={`data:application/pdf;base64,${pdfData}`}
+                    className="w-full h-full"
+                    title="PDF Preview"
+                  />
+                </div>
+              )}
+
+              {!pdfData && !isLoading && !error && (
+                <div className="flex items-center justify-center h-full border rounded-md bg-muted/50">
+                  <div className="text-center">
+                    <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">PDF появится здесь</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Панель настроек */}
-          <div>
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Настройки стилей
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="font-family">Шрифт</Label>
-                  <Select value={settings.font_family} onValueChange={(value) => updateSetting('font_family', value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Inter">Inter (Рекомендуется)</SelectItem>
-                      <SelectItem value="Arial">Arial</SelectItem>
-                      <SelectItem value="Helvetica">Helvetica</SelectItem>
-                      <SelectItem value="Times-Roman">Times Roman</SelectItem>
-                      <SelectItem value="Courier">Courier</SelectItem>
-                      <SelectItem value="Georgia">Georgia</SelectItem>
-                      <SelectItem value="Verdana">Verdana</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <Card className="self-start">
+            <CardHeader className="py-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Настройки
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 space-y-3">
+              <div>
+                <Label htmlFor="font-family" className="text-xs">Шрифт</Label>
+                <Select value={settings.font_family} onValueChange={(value) => updateSetting('font_family', value)}>
+                  <SelectTrigger className="h-8 text-xs mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Inter">Inter</SelectItem>
+                    <SelectItem value="Arial">Arial</SelectItem>
+                    <SelectItem value="Helvetica">Helvetica</SelectItem>
+                    <SelectItem value="Times-Roman">Times Roman</SelectItem>
+                    <SelectItem value="Courier">Courier</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label htmlFor="font-size">Размер шрифта (pt)</Label>
+                  <Label htmlFor="font-size" className="text-xs">Размер</Label>
                   <Input
                     id="font-size"
                     type="number"
@@ -243,11 +243,11 @@ function hello() {
                     onChange={(e) => updateSetting('font_size', parseInt(e.target.value) || 12)}
                     min="8"
                     max="24"
+                    className="h-8 text-xs mt-1"
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="line-height">Межстрочный интервал</Label>
+                  <Label htmlFor="line-height" className="text-xs">Интервал</Label>
                   <Input
                     id="line-height"
                     type="number"
@@ -256,109 +256,93 @@ function hello() {
                     onChange={(e) => updateSetting('line_height', parseFloat(e.target.value) || 1.6)}
                     min="1"
                     max="3"
+                    className="h-8 text-xs mt-1"
                   />
                 </div>
+              </div>
 
-                <Separator />
+              <Separator />
 
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label htmlFor="text-color">Цвет текста</Label>
+                  <Label htmlFor="text-color" className="text-xs">Текст</Label>
                   <Input
                     id="text-color"
                     type="color"
                     value={settings.text_color}
                     onChange={(e) => updateSetting('text_color', e.target.value)}
+                    className="h-8 w-full cursor-pointer mt-1"
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="bg-color">Цвет фона</Label>
+                  <Label htmlFor="bg-color" className="text-xs">Фон</Label>
                   <Input
                     id="bg-color"
                     type="color"
                     value={settings.background_color}
                     onChange={(e) => updateSetting('background_color', e.target.value)}
+                    className="h-8 w-full cursor-pointer mt-1"
                   />
                 </div>
+              </div>
 
-                <Separator />
+              <Separator />
 
+              <div>
+                <Label className="text-xs mb-2 block">Отступы (pt)</Label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label htmlFor="margin-top">Отступ сверху</Label>
-                    <Input
-                      id="margin-top"
-                      type="number"
-                      value={settings.margin_top}
-                      onChange={(e) => updateSetting('margin_top', parseInt(e.target.value) || 72)}
-                      min="0"
-                      max="144"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="margin-bottom">Отступ снизу</Label>
-                    <Input
-                      id="margin-bottom"
-                      type="number"
-                      value={settings.margin_bottom}
-                      onChange={(e) => updateSetting('margin_bottom', parseInt(e.target.value) || 72)}
-                      min="0"
-                      max="144"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="margin-left">Отступ слева</Label>
-                    <Input
-                      id="margin-left"
-                      type="number"
-                      value={settings.margin_left}
-                      onChange={(e) => updateSetting('margin_left', parseInt(e.target.value) || 72)}
-                      min="0"
-                      max="144"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="margin-right">Отступ справа</Label>
-                    <Input
-                      id="margin-right"
-                      type="number"
-                      value={settings.margin_right}
-                      onChange={(e) => updateSetting('margin_right', parseInt(e.target.value) || 72)}
-                      min="0"
-                      max="144"
-                    />
-                  </div>
+                  <Input
+                    type="number"
+                    placeholder="Верх"
+                    value={settings.margin_top}
+                    onChange={(e) => updateSetting('margin_top', parseInt(e.target.value) || 72)}
+                    min="0"
+                    max="144"
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Низ"
+                    value={settings.margin_bottom}
+                    onChange={(e) => updateSetting('margin_bottom', parseInt(e.target.value) || 72)}
+                    min="0"
+                    max="144"
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Лево"
+                    value={settings.margin_left}
+                    onChange={(e) => updateSetting('margin_left', parseInt(e.target.value) || 72)}
+                    min="0"
+                    max="144"
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Право"
+                    value={settings.margin_right}
+                    onChange={(e) => updateSetting('margin_right', parseInt(e.target.value) || 72)}
+                    min="0"
+                    max="144"
+                    className="h-8 text-xs"
+                  />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* Кнопка скачивания */}
-            <Card>
-              <CardContent className="pt-6">
-                <Button 
-                  onClick={downloadPdf} 
-                  disabled={!pdfData || isLoading}
-                  className="w-full"
-                  size="lg"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  {isLoading ? 'Конвертация...' : 'Скачать PDF'}
-                </Button>
-                
-                {error && (
-                  <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                    <p className="text-sm text-destructive">{error}</p>
-                  </div>
-                )}
-                
-                {pdfData && !error && (
-                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
-                    <p className="text-sm text-green-700">PDF готов к скачиванию!</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+              {error && (
+                <div className="p-2 bg-destructive/10 border border-destructive/20 rounded-md">
+                  <p className="text-xs text-destructive">{error}</p>
+                </div>
+              )}
+
+              {pdfData && !error && (
+                <div className="p-2 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-xs text-green-700">PDF готов!</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
