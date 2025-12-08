@@ -27,8 +27,12 @@ share/python-wheels/
 MANIFEST
 
 frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.DS_Store
 backend/venv/
 backend/.env
+.DS_Store
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

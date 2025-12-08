@@ -4,6 +4,18 @@
 
 Зачем?
 Например, чтобы удобно просматривать md файлы на телефоне, или рисовать в них 😁
+
+## Требования
+
+- Python 3.8+
+- Node.js 16+
+- macOS, Linux или Windows (с bash)
+
+На macOS можно установить через Homebrew:
+```bash
+brew install python3 node
+```
+
 ## Возможности
 
 ✔️ Редактор Markdown с подсветкой синтаксиса
@@ -42,29 +54,47 @@
 - **Технологии**: React, Vite, Tailwind CSS
 - **Порт**: 5175 (dev)
 
-## Запуск
+## Быстрый старт
 
-### Backend
+### Первый запуск (настройка)
 
+```bash
+./setup.sh
+```
+
+Этот скрипт автоматически:
+- Проверит наличие Python и Node.js
+- Создаст виртуальное окружение для Python
+- Установит все необходимые зависимости для backend и frontend
+
+### Запуск приложения
+
+```bash
+./start.sh
+```
+
+Этот скрипт запустит backend и frontend одной командой. Приложение откроется по адресу http://localhost:5173
+
+Для остановки нажмите `Ctrl+C` - это автоматически остановит оба сервера.
+
+### Ручной запуск (опционально)
+
+Если хотите запускать backend и frontend отдельно:
+
+**Backend:**
 ```bash
 cd backend
-python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
 python app.py
 ```
+Backend: http://localhost:8000
 
-Backend будет доступен по адресу: http://localhost:8000
-
-### Frontend
-
+**Frontend:**
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
-
-Frontend будет доступен по адресу: http://localhost:5173
+Frontend: http://localhost:5173
 
 ## Использование
 
