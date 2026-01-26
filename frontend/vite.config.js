@@ -12,6 +12,16 @@ export default defineConfig({
     },
   },
   server: {
-    open: true, // Автоматически открывать браузер при запуске
+    open: !process.env.ELECTRON_DEV, // Не открывать браузер в Electron режиме
+  },
+  base: './', // Относительные пути для Electron
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
   },
 })

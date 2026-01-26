@@ -1,6 +1,7 @@
 import markdown
 import weasyprint
 from typing import Dict, Any
+from pygments.formatters import HtmlFormatter
 
 
 def get_css_font_family(font_family: str) -> str:
@@ -20,8 +21,18 @@ def get_css_font_family(font_family: str) -> str:
 def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) -> bytes:
     
     css_font_family = get_css_font_family(settings['font_family'])
-    
-    html_content = markdown.markdown(markdown_content, extensions=['tables', 'fenced_code'])
+    code_style = HtmlFormatter(style='monokai').get_style_defs('.codehilite')
+
+    html_content = markdown.markdown(
+        markdown_content,
+        extensions=['tables', 'fenced_code', 'codehilite'],
+        extension_configs={
+            'codehilite': {
+                'guess_lang': False,
+                'noclasses': False
+            }
+        }
+    )
     
     full_html = f"""
     <!DOCTYPE html>
@@ -96,6 +107,22 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
                 overflow-x: auto;
                 margin: 12pt 0;
             }}
+
+            .codehilite {{
+                border-radius: 6pt;
+                overflow-x: auto;
+            }}
+
+            .codehilite pre {{
+                background: transparent;
+                margin: 12pt 0;
+                padding: 12pt;
+            }}
+
+            .codehilite code {{
+                background: transparent;
+                padding: 0;
+            }}
             
             blockquote {{
                 margin: 12pt 0;
@@ -120,6 +147,8 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
                 background-color: #f5f5f5;
                 font-weight: bold;
             }}
+
+            {code_style}
         </style>
     </head>
     <body>

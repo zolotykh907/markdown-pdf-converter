@@ -5,3 +5,4 @@ markdown
 weasyprint
 pydantic
 python-dotenv
+pygments
