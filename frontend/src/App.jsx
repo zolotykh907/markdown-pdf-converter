@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { languages } from '@codemirror/language-data'
+import { undo as cmUndo, redo as cmRedo } from '@codemirror/commands'
+import { EditorView } from '@codemirror/view'
 import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Textarea } from '@/components/ui/textarea.jsx'
+import { Card, CardContent } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Separator } from '@/components/ui/separator.jsx'
-import { Download, FileText, Settings, Upload, Bold, Italic, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, PanelRightClose, PanelRightOpen, Undo2, Redo2 } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx'
+import { Download, FileText, Upload, Bold, Italic, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, Undo2, Redo2 } from 'lucide-react'
 import './App.css'
 
 function App() {
@@ -56,114 +60,33 @@ function hello() {
   const [error, setError] = useState(null)
   const [fileName, setFileName] = useState('document')
   const fileInputRef = useRef(null)
-  const textareaRef = useRef(null)
+  const editorViewRef = useRef(null)
   const [showToolbar, setShowToolbar] = useState(false)
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 })
-  const [showSettings, setShowSettings] = useState(true)
-  const backendUrl = (import.meta?.env?.VITE_BACKEND_URL) || 'http://localhost:8000'
+  const backendUrl = (() => {
+    const configuredUrl = import.meta?.env?.VITE_BACKEND_URL
+    if (configuredUrl) return configuredUrl
+
+    // Electron production loads the UI from file://, so relative fetches
+    // would target the app bundle instead of the local FastAPI server.
+    if (window?.electron?.isElectron || window.location.protocol === 'file:') {
+      return 'http://localhost:8000'
+    }
+
+    return ''
+  })()
 
   const [backendReady, setBackendReady] = useState(false)
   const [backendStatus, setBackendStatus] = useState('starting')
   const pendingConvert = useRef(false)
 
-  // История для Undo/Redo
-  const [history, setHistory] = useState([`# Добро пожаловать в Markdown to PDF Converter
-
-Это **пример** документа для демонстрации возможностей конвертера.
-
-## Возможности
-
-- Конвертация Markdown в PDF
-- Настройка стилей в реальном времени
-- Предпросмотр результата
-- Скачивание готового PDF
-
-### Пример кода
-
-\`\`\`javascript
-function hello() {
-    console.log("Hello, World!");
-}
-\`\`\`
-
-### Список задач
-
-1. Написать текст в Markdown
-2. Настроить стили
-3. Скачать PDF
-
-> Это цитата для демонстрации стилей.
-
-**Жирный текст** и *курсив* также поддерживаются.`])
-  const [historyIndex, setHistoryIndex] = useState(0)
-  const isUndoRedo = useRef(false)
-  const historyTimeout = useRef(null)
-
-  // Обновление контента с записью в историю (с debounce)
-  const updateContent = useCallback((newContent) => {
-    setMarkdownContent(newContent)
-
-    if (isUndoRedo.current) {
-      isUndoRedo.current = false
-      return
-    }
-
-    // Debounce для записи в историю (500ms)
-    if (historyTimeout.current) {
-      clearTimeout(historyTimeout.current)
-    }
-
-    historyTimeout.current = setTimeout(() => {
-      setHistory(prev => {
-        const newHistory = prev.slice(0, historyIndex + 1)
-        // Не добавляем если контент такой же
-        if (newHistory[newHistory.length - 1] === newContent) return prev
-        return [...newHistory, newContent]
-      })
-      setHistoryIndex(prev => prev + 1)
-    }, 500)
-  }, [historyIndex])
-
-  // Undo
   const undo = useCallback(() => {
-    if (historyIndex > 0) {
-      isUndoRedo.current = true
-      const newIndex = historyIndex - 1
-      setHistoryIndex(newIndex)
-      setMarkdownContent(history[newIndex])
-    }
-  }, [historyIndex, history])
+    if (editorViewRef.current) cmUndo(editorViewRef.current)
+  }, [])
 
-  // Redo
   const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      isUndoRedo.current = true
-      const newIndex = historyIndex + 1
-      setHistoryIndex(newIndex)
-      setMarkdownContent(history[newIndex])
-    }
-  }, [historyIndex, history])
-
-  // Клавиатурные сокращения для Undo/Redo
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) {
-          redo()
-        } else {
-          undo()
-        }
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
-        e.preventDefault()
-        redo()
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [undo, redo])
+    if (editorViewRef.current) cmRedo(editorViewRef.current)
+  }, [])
 
   const convertToPdf = useCallback(async () => {
     if (!markdownContent.trim()) return
@@ -233,6 +156,7 @@ function hello() {
 
   // Проверка готовности backend (для Electron/Web)
   useEffect(() => {
+    setBackendReady(false)
     let cancelled = false
     let attempts = 0
 
@@ -259,7 +183,7 @@ function hello() {
     return () => {
       cancelled = true
     }
-  }, [backendUrl, backendReady])
+  }, [backendUrl])
 
   // Если backend только что поднялся, делаем отложенную конвертацию
   useEffect(() => {
@@ -328,131 +252,86 @@ function hello() {
     }))
   }
 
-  // Функции для вставки форматирования
+  // Функции для вставки форматирования (CodeMirror API)
   const insertFormatting = (before, after = '', placeholder = '') => {
-    const textarea = textareaRef.current
-    if (!textarea) return
+    const view = editorViewRef.current
+    if (!view) return
 
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const selectedText = markdownContent.substring(start, end)
+    const { from, to } = view.state.selection.main
+    const selectedText = view.state.sliceDoc(from, to)
     const textToInsert = selectedText || placeholder
 
-    const newText =
-      markdownContent.substring(0, start) +
-      before + textToInsert + after +
-      markdownContent.substring(end)
-
-    setMarkdownContent(newText)
-
-    // Устанавливаем курсор после вставки
-    setTimeout(() => {
-      textarea.focus()
-      const newCursorPos = start + before.length + textToInsert.length
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    }, 0)
+    view.dispatch({
+      changes: { from, to, insert: before + textToInsert + after },
+      selection: { anchor: from + before.length + textToInsert.length }
+    })
+    view.focus()
   }
 
   const insertLineFormatting = (prefix, placeholder = '') => {
-    const textarea = textareaRef.current
-    if (!textarea) return
+    const view = editorViewRef.current
+    if (!view) return
 
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const lines = markdownContent.split('\n')
+    const { from, to } = view.state.selection.main
+    const startLine = view.state.doc.lineAt(from)
+    const endLine = view.state.doc.lineAt(to)
+    const changes = []
 
-    let currentPos = 0
-    let startLine = 0
-    let endLine = 0
-
-    // Найти строки, в которых находится выделение
-    for (let i = 0; i < lines.length; i++) {
-      const lineLength = lines[i].length + 1 // +1 для \n
-      if (currentPos <= start && start < currentPos + lineLength) {
-        startLine = i
-      }
-      if (currentPos <= end && end <= currentPos + lineLength) {
-        endLine = i
-        break
-      }
-      currentPos += lineLength
-    }
-
-    // Применить форматирование к каждой строке
-    for (let i = startLine; i <= endLine; i++) {
-      if (lines[i].trim() === '' && placeholder) {
-        lines[i] = prefix + placeholder
-      } else if (!lines[i].startsWith(prefix)) {
-        lines[i] = prefix + lines[i]
+    for (let lineNum = startLine.number; lineNum <= endLine.number; lineNum++) {
+      const line = view.state.doc.line(lineNum)
+      if (line.text.trim() === '' && placeholder) {
+        changes.push({ from: line.from, to: line.to, insert: prefix + placeholder })
+      } else if (!line.text.startsWith(prefix)) {
+        changes.push({ from: line.from, insert: prefix })
       }
     }
 
-    setMarkdownContent(lines.join('\n'))
-
-    setTimeout(() => {
-      textarea.focus()
-    }, 0)
+    view.dispatch({ changes })
+    view.focus()
   }
 
   const insertBlock = (template) => {
-    const textarea = textareaRef.current
-    if (!textarea) return
+    const view = editorViewRef.current
+    if (!view) return
 
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-
-    // Вставляем на новой строке
-    const beforeText = markdownContent.substring(0, start)
-    const afterText = markdownContent.substring(end)
+    const { from, to } = view.state.selection.main
+    const beforeText = view.state.sliceDoc(0, from)
+    const afterText = view.state.sliceDoc(to)
 
     const needsNewlineBefore = beforeText && !beforeText.endsWith('\n')
     const needsNewlineAfter = afterText && !afterText.startsWith('\n')
 
-    const newText =
-      beforeText +
+    const insert =
       (needsNewlineBefore ? '\n\n' : '') +
       template +
-      (needsNewlineAfter ? '\n\n' : '') +
-      afterText
+      (needsNewlineAfter ? '\n\n' : '')
 
-    setMarkdownContent(newText)
-
-    setTimeout(() => {
-      textarea.focus()
-    }, 0)
+    view.dispatch({ changes: { from, to, insert } })
+    view.focus()
   }
 
   // Обработка выделения текста для показа всплывающей панели
   const handleTextSelect = (e) => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-
     setTimeout(() => {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
+      const view = editorViewRef.current
+      const selection = view?.state?.selection?.main
+      const hasSelection = selection && selection.from !== selection.to
 
-      // Если есть выделение
-      if (end - start > 0) {
-        // Используем координаты мыши для позиционирования
+      if (hasSelection) {
         const mouseX = e?.clientX
         const mouseY = e?.clientY
 
         if (mouseX && mouseY) {
-          // Ширина тулбара примерно 280px
           const toolbarWidth = 280
           const toolbarHeight = 40
 
-          // Позиционируем тулбар над курсором, по центру
           let left = mouseX - (toolbarWidth / 2)
-          let top = mouseY - toolbarHeight - 25 // 25px отступ сверху от курсора
+          let top = mouseY - toolbarHeight - 25
 
-          // Не даём тулбару выйти за левый край экрана
           if (left < 10) left = 10
-          // Не даём тулбару выйти за правый край экрана
           if (left + toolbarWidth > window.innerWidth - 10) {
             left = window.innerWidth - toolbarWidth - 10
           }
-          // Если тулбар выходит за верх экрана, показываем его снизу
           if (top < 10) {
             top = mouseY + 20
           }
@@ -469,13 +348,9 @@ function hello() {
   // Закрыть панель при клике вне её
   useEffect(() => {
     const handleClickOutside = () => {
-      const textarea = textareaRef.current
-      if (!textarea) return
-
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-
-      if (end - start === 0) {
+      const view = editorViewRef.current
+      const selection = view?.state?.selection?.main
+      if (!selection || selection.from === selection.to) {
         setShowToolbar(false)
       }
     }
@@ -496,51 +371,108 @@ function hello() {
           className="hidden"
         />
 
-        {/* Компактная верхняя панель */}
-        <div className="flex items-center justify-between gap-2 mb-2 px-1">
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={openFileDialog}
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-7 text-xs"
-            >
-              <Upload className="h-3 w-3" />
-              Открыть .md
-            </Button>
-            <div className="flex items-center gap-1.5">
-              <Input
-                id="filename"
-                value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
-                className="h-7 w-32 text-xs"
-                placeholder="document"
-              />
-              <span className="text-xs text-muted-foreground">.pdf</span>
-            </div>
-            <Button
-              onClick={downloadPdf}
-              disabled={!pdfData || isLoading}
-              size="sm"
-              className="gap-1.5 h-7 text-xs"
-            >
-              <Download className="h-3 w-3" />
-              Скачать PDF
-            </Button>
-          </div>
-          <Button
-            onClick={() => setShowSettings(!showSettings)}
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            title={showSettings ? 'Скрыть настройки' : 'Показать настройки'}
-          >
-            {showSettings ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-            {showSettings ? 'Скрыть' : 'Настройки'}
+        {/* Верхняя панель */}
+        <div className="flex items-center gap-2 mb-2 px-2 py-2 border-b overflow-x-auto shrink-0">
+          {/* Файл */}
+          <Button onClick={openFileDialog} variant="outline" size="sm" className="gap-1.5 shrink-0">
+            <Upload className="h-3.5 w-3.5" />
+            Открыть .md
           </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            <Input value={fileName} onChange={(e) => setFileName(e.target.value)} className="h-8 w-28 text-sm" placeholder="document" />
+            <span className="text-sm text-muted-foreground">.pdf</span>
+          </div>
+          <Button onClick={downloadPdf} disabled={!pdfData || isLoading} size="sm" className="gap-1.5 shrink-0">
+            <Download className="h-3.5 w-3.5" />
+            Скачать PDF
+          </Button>
+
+          <div className="w-px h-6 bg-border shrink-0 mx-1" />
+
+          {/* Типографика */}
+          <div className="flex items-center gap-3 bg-muted/40 border rounded-lg px-3 py-1.5 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-medium">Шрифт</span>
+              <Select value={settings.font_family} onValueChange={(value) => updateSetting('font_family', value)}>
+                <SelectTrigger className="h-7 text-xs w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Inter">Inter</SelectItem>
+                  <SelectItem value="Arial">Arial</SelectItem>
+                  <SelectItem value="Helvetica">Helvetica</SelectItem>
+                  <SelectItem value="Times-Roman">Times Roman</SelectItem>
+                  <SelectItem value="Courier">Courier</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-medium">px</span>
+              <Input type="number" value={settings.font_size} onChange={(e) => updateSetting('font_size', parseInt(e.target.value) || 12)} min="8" max="24" className="h-7 w-12 text-xs text-center px-1" />
+            </div>
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-medium">×</span>
+              <Input type="number" step="0.1" value={settings.line_height} onChange={(e) => updateSetting('line_height', parseFloat(e.target.value) || 1.6)} min="1" max="3" className="h-7 w-14 text-xs text-center px-1" />
+            </div>
+          </div>
+
+          {/* Цвета */}
+          <div className="flex items-center gap-3 bg-muted/40 border rounded-lg px-3 py-1.5 shrink-0">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-xs text-muted-foreground font-medium">Текст</span>
+              <div className="relative h-7 w-8 rounded-md border shadow-sm overflow-hidden hover:ring-2 hover:ring-ring transition-all">
+                <div className="absolute inset-0" style={{ backgroundColor: settings.text_color }} />
+                <input type="color" value={settings.text_color} onChange={(e) => updateSetting('text_color', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              </div>
+            </label>
+            <div className="w-px h-4 bg-border" />
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-xs text-muted-foreground font-medium">Фон</span>
+              <div className="relative h-7 w-8 rounded-md border shadow-sm overflow-hidden hover:ring-2 hover:ring-ring transition-all">
+                <div className="absolute inset-0 bg-[repeating-conic-gradient(#aaa_0%_25%,#fff_0%_50%)] bg-[length:8px_8px]" />
+                <div className="absolute inset-0" style={{ backgroundColor: settings.background_color }} />
+                <input type="color" value={settings.background_color} onChange={(e) => updateSetting('background_color', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              </div>
+            </label>
+          </div>
+
+          {/* Поля — выпадающее */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="flex items-center gap-2 bg-muted/40 border rounded-lg px-3 py-1.5 shrink-0 text-xs text-muted-foreground font-medium hover:bg-muted/70 transition-colors cursor-pointer">
+                Поля
+                <span className="text-muted-foreground/60">
+                  {settings.margin_top}·{settings.margin_right}·{settings.margin_bottom}·{settings.margin_left}
+                </span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-56 p-4">
+              <p className="text-sm font-medium mb-3">Поля страницы (pt)</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground w-16">Верх</span>
+                  <Input type="number" value={settings.margin_top} onChange={(e) => updateSetting('margin_top', parseInt(e.target.value) || 0)} min="0" max="200" className="h-7 w-20 text-xs text-center" />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground w-16">Низ</span>
+                  <Input type="number" value={settings.margin_bottom} onChange={(e) => updateSetting('margin_bottom', parseInt(e.target.value) || 0)} min="0" max="200" className="h-7 w-20 text-xs text-center" />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground w-16">Левое</span>
+                  <Input type="number" value={settings.margin_left} onChange={(e) => updateSetting('margin_left', parseInt(e.target.value) || 0)} min="0" max="200" className="h-7 w-20 text-xs text-center" />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground w-16">Правое</span>
+                  <Input type="number" value={settings.margin_right} onChange={(e) => updateSetting('margin_right', parseInt(e.target.value) || 0)} min="0" max="200" className="h-7 w-20 text-xs text-center" />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
-        <div className={`grid grid-cols-1 gap-2 flex-1 min-h-0 ${showSettings ? 'lg:grid-cols-[1fr_1fr_240px]' : 'lg:grid-cols-2'}`}>
+        <div className="grid grid-cols-1 gap-2 flex-1 min-h-0 lg:grid-cols-2">
           {/* Редактор Markdown */}
           <Card className="flex flex-col">
             <CardContent className="p-2 flex-1 min-h-0 flex flex-col gap-2 relative">
@@ -616,7 +548,6 @@ function hello() {
               <div className="flex items-center gap-1 p-1 border rounded-md bg-muted/50 flex-wrap">
                 <Button
                   onClick={undo}
-                  disabled={historyIndex <= 0}
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
@@ -626,7 +557,6 @@ function hello() {
                 </Button>
                 <Button
                   onClick={redo}
-                  disabled={historyIndex >= history.length - 1}
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
@@ -732,14 +662,24 @@ function hello() {
                 </Button>
               </div>
 
-              <Textarea
-                ref={textareaRef}
-                value={markdownContent}
-                onChange={(e) => updateContent(e.target.value)}
-                onMouseUp={handleTextSelect}
-                placeholder="Введите ваш Markdown текст здесь..."
-                className="flex-1 font-mono text-sm resize-none"
-              />
+              <div className="flex-1 min-h-0 overflow-auto" onMouseUp={handleTextSelect}>
+                <CodeMirror
+                  value={markdownContent}
+                  onChange={(value) => setMarkdownContent(value)}
+                  onCreateEditor={(view) => { editorViewRef.current = view }}
+                  extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping]}
+                  basicSetup={{
+                    lineNumbers: true,
+                    highlightActiveLine: true,
+                    foldGutter: false,
+                    dropCursor: false,
+                    allowMultipleSelections: false,
+                    indentOnInput: true,
+                  }}
+                  style={{ height: '100%', fontSize: '13px' }}
+                  placeholder="Введите ваш Markdown текст здесь..."
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -787,138 +727,6 @@ function hello() {
             </CardContent>
           </Card>
 
-          {/* Панель настроек */}
-          {showSettings && (
-          <Card className="self-start">
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Settings className="h-3.5 w-3.5" />
-                Настройки
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-2 space-y-2">
-              <div>
-                <Label htmlFor="font-family" className="text-xs">Шрифт</Label>
-                <Select value={settings.font_family} onValueChange={(value) => updateSetting('font_family', value)}>
-                  <SelectTrigger className="h-8 text-xs mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Inter">Inter</SelectItem>
-                    <SelectItem value="Arial">Arial</SelectItem>
-                    <SelectItem value="Helvetica">Helvetica</SelectItem>
-                    <SelectItem value="Times-Roman">Times Roman</SelectItem>
-                    <SelectItem value="Courier">Courier</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label htmlFor="font-size" className="text-xs">Размер</Label>
-                  <Input
-                    id="font-size"
-                    type="number"
-                    value={settings.font_size}
-                    onChange={(e) => updateSetting('font_size', parseInt(e.target.value) || 12)}
-                    min="8"
-                    max="24"
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="line-height" className="text-xs">Интервал</Label>
-                  <Input
-                    id="line-height"
-                    type="number"
-                    step="0.1"
-                    value={settings.line_height}
-                    onChange={(e) => updateSetting('line_height', parseFloat(e.target.value) || 1.6)}
-                    min="1"
-                    max="3"
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label htmlFor="text-color" className="text-xs">Текст</Label>
-                  <Input
-                    id="text-color"
-                    type="color"
-                    value={settings.text_color}
-                    onChange={(e) => updateSetting('text_color', e.target.value)}
-                    className="h-8 w-full cursor-pointer mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="bg-color" className="text-xs">Фон</Label>
-                  <Input
-                    id="bg-color"
-                    type="color"
-                    value={settings.background_color}
-                    onChange={(e) => updateSetting('background_color', e.target.value)}
-                    className="h-8 w-full cursor-pointer mt-1"
-                  />
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <Label className="text-xs mb-2 block">Отступы (pt)</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Верх"
-                    value={settings.margin_top}
-                    onChange={(e) => updateSetting('margin_top', parseInt(e.target.value) || 72)}
-                    min="0"
-                    max="144"
-                    className="h-8 text-xs"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Низ"
-                    value={settings.margin_bottom}
-                    onChange={(e) => updateSetting('margin_bottom', parseInt(e.target.value) || 72)}
-                    min="0"
-                    max="144"
-                    className="h-8 text-xs"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Лево"
-                    value={settings.margin_left}
-                    onChange={(e) => updateSetting('margin_left', parseInt(e.target.value) || 72)}
-                    min="0"
-                    max="144"
-                    className="h-8 text-xs"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Право"
-                    value={settings.margin_right}
-                    onChange={(e) => updateSetting('margin_right', parseInt(e.target.value) || 72)}
-                    min="0"
-                    max="144"
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <div className="p-2 bg-destructive/10 border border-destructive/20 rounded-md">
-                  <p className="text-xs text-destructive">{error}</p>
-                </div>
-              )}
-
-            </CardContent>
-          </Card>
-          )}
         </div>
       </div>
     </div>

@@ -104,13 +104,13 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
                 background-color: #f5f5f5;
                 padding: 12pt;
                 border-radius: 6pt;
-                overflow-x: auto;
                 margin: 12pt 0;
+                white-space: pre-wrap;
+                word-break: break-all;
             }}
 
             .codehilite {{
                 border-radius: 6pt;
-                overflow-x: auto;
             }}
 
             .codehilite pre {{

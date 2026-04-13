@@ -13,6 +13,10 @@ export default defineConfig({
   },
   server: {
     open: !process.env.ELECTRON_DEV, // Не открывать браузер в Electron режиме
+    proxy: {
+      '/convert': 'http://localhost:8000',
+      '/health': 'http://localhost:8000',
+    },
   },
   base: './', // Относительные пути для Electron
   build: {

@@ -64,6 +64,20 @@ brew install python3 node
 - **Технологии**: React, Vite, Tailwind CSS
 - **Порт**: 5175 (dev)
 
+## Deploy в Netlify
+
+В репозитории уже добавлен `netlify.toml`, поэтому Netlify автоматически:
+- собирает только `frontend`
+- использует команду `npm run build`
+- публикует `frontend/dist`
+
+Важно: backend (FastAPI + weasyprint) нужно хостить отдельно (например, Render/Railway/Fly.io).  
+После этого в настройках сайта Netlify задайте переменную окружения:
+
+- `VITE_BACKEND_URL=https://ваш-backend-домен`
+
+Без этой переменной frontend не сможет выполнять конвертацию в PDF.
+
 ## Быстрый старт
 
 ### Вариант 1: Docker (проще всего)

@@ -175,7 +175,7 @@ function createWindow() {
       // В production режиме нужно разрешить загрузку локальных файлов
       webSecurity: isDev ? true : false,
     },
-    icon: path.join(__dirname, '..', 'frontend', 'public', 'favicon.ico'),
+    icon: path.join(__dirname, '..', 'frontend', 'public', 'favicon.png'),
     title: 'Markdown to PDF Converter',
     show: false, // Не показываем окно до загрузки
   });

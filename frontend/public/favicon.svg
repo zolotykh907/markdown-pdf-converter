@@ -1,9 +1,49 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" fill="#3b82f6"/>
-  <rect x="6" y="4" width="20" height="24" rx="2" fill="white"/>
-  <rect x="9" y="8" width="14" height="2" fill="#3b82f6"/>
-  <rect x="9" y="11" width="10" height="2" fill="#3b82f6"/>
-  <rect x="9" y="14" width="12" height="2" fill="#3b82f6"/>
-  <rect x="9" y="17" width="8" height="2" fill="#3b82f6"/>
-  <text x="16" y="28" font-family="Arial" font-size="8" font-weight="bold" text-anchor="middle" fill="white">PDF</text>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="144" y1="120" x2="884" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3557" />
+      <stop offset="0.55" stop-color="#155e75" />
+      <stop offset="1" stop-color="#0f766e" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(322 248) rotate(41.2) scale(356 324)">
+      <stop offset="0" stop-color="#fef3c7" stop-opacity="0.92" />
+      <stop offset="0.52" stop-color="#fde68a" stop-opacity="0.28" />
+      <stop offset="1" stop-color="#fde68a" stop-opacity="0" />
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#082f49" flood-opacity="0.28" />
+    </filter>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#bg)" />
+  <circle cx="322" cy="248" r="300" fill="url(#glow)" />
+  <circle cx="780" cy="808" r="188" fill="#dbeafe" opacity="0.08" />
+
+  <g filter="url(#shadow)">
+    <path d="M308 166h292l116 116v462c0 39.765-32.235 72-72 72H308c-39.765 0-72-32.235-72-72V238c0-39.765 32.235-72 72-72Z" fill="#f8fafc" />
+    <path d="M600 166v88c0 39.765 32.235 72 72 72h44L600 166Z" fill="#f59e0b" />
+    <path d="M602 166v88c0 38.66 31.34 70 70 70h44" fill="none" stroke="#fcd34d" stroke-width="12" stroke-linejoin="round" />
+  </g>
+
+  <g fill="#155e75">
+    <rect x="336" y="274" width="34" height="170" rx="17" />
+    <rect x="430" y="274" width="34" height="170" rx="17" />
+    <rect x="278" y="332" width="248" height="34" rx="17" />
+    <rect x="278" y="426" width="248" height="34" rx="17" />
+  </g>
+
+  <g fill="#64748b" opacity="0.88">
+    <rect x="280" y="526" width="392" height="28" rx="14" />
+    <rect x="280" y="584" width="332" height="28" rx="14" />
+    <rect x="280" y="642" width="288" height="28" rx="14" />
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="418" y="690" width="388" height="132" rx="52" fill="#dc2626" />
+    <rect x="436" y="708" width="352" height="96" rx="42" fill="#ef4444" />
+  </g>
+
+  <text x="612" y="778" font-family="Inter, SF Pro Display, Arial, sans-serif" font-size="96"
+    font-weight="800" text-anchor="middle" fill="#fff7ed" letter-spacing="6">PDF</text>
 </svg>
