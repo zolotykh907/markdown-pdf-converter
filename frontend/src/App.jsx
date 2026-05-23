@@ -310,6 +310,35 @@ function hello() {
     view.focus()
   }
 
+  const insertCodeBlock = (language = 'javascript', placeholder = '// код') => {
+    const view = editorViewRef.current
+    if (!view) return
+
+    const { from, to } = view.state.selection.main
+    const selectedText = view.state.sliceDoc(from, to)
+    const beforeText = view.state.sliceDoc(0, from)
+    const afterText = view.state.sliceDoc(to)
+
+    const needsNewlineBefore = beforeText && !beforeText.endsWith('\n')
+    const needsNewlineAfter = afterText && !afterText.startsWith('\n')
+    const openingFence = `\`\`\`${language}`
+    const codeContent = selectedText || placeholder
+    const closingNewline = codeContent.endsWith('\n') ? '' : '\n'
+    const insert =
+      (needsNewlineBefore ? '\n\n' : '') +
+      `${openingFence}\n${codeContent}${closingNewline}\`\`\`` +
+      (needsNewlineAfter ? '\n\n' : '')
+
+    const codeStart = from + (needsNewlineBefore ? 2 : 0) + openingFence.length + 1
+    const codeEnd = codeStart + codeContent.length
+
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: codeStart, head: codeEnd }
+    })
+    view.focus()
+  }
+
   // Обработка выделения текста для показа всплывающей панели
   const handleTextSelect = (e) => {
     setTimeout(() => {
@@ -632,7 +661,7 @@ function hello() {
                   <Code className="h-3.5 w-3.5" />
                 </Button>
                 <Button
-                  onClick={() => insertBlock('```javascript\n// код\n```')}
+                  onClick={() => insertCodeBlock('javascript', '// код')}
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2"
