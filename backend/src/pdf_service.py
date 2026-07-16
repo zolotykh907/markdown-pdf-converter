@@ -4,6 +4,9 @@ from typing import Dict, Any
 from pygments.formatters import HtmlFormatter
 
 
+CODE_STYLE = HtmlFormatter(style='monokai').get_style_defs('.codehilite')
+
+
 def get_css_font_family(font_family: str) -> str:
     font_mapping = {
         'Inter': 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -21,7 +24,6 @@ def get_css_font_family(font_family: str) -> str:
 def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) -> bytes:
     
     css_font_family = get_css_font_family(settings['font_family'])
-    code_style = HtmlFormatter(style='monokai').get_style_defs('.codehilite')
 
     html_content = markdown.markdown(
         markdown_content,
@@ -98,6 +100,13 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
                 padding: 2pt 4pt;
                 border-radius: 3pt;
             }}
+
+            mark {{
+                background-color: #fff176;
+                color: inherit;
+                padding: 0 2pt;
+                border-radius: 2pt;
+            }}
             
             pre {{
                 font-family: 'Courier New', Courier, monospace;
@@ -148,7 +157,7 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
                 font-weight: bold;
             }}
 
-            {code_style}
+            {CODE_STYLE}
         </style>
     </head>
     <body>

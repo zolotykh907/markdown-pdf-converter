@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, startTransition } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -10,8 +10,30 @@ import { Input } from '@/components/ui/input.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Separator } from '@/components/ui/separator.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx'
-import { Download, FileText, Upload, Bold, Italic, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, Undo2, Redo2 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch.jsx'
+import MarkdownPreview from '@/components/markdown-preview.jsx'
+import { Download, FileText, Upload, Bold, Italic, Highlighter, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, Undo2, Redo2, RefreshCw, Loader2 } from 'lucide-react'
 import './App.css'
+
+const IS_ELECTRON = Boolean(window.electron?.isElectron)
+const LARGE_DOCUMENT_THRESHOLD = 50000
+const PREVIEW_DEBOUNCE_MS = 900
+const LARGE_PREVIEW_DEBOUNCE_MS = 2500
+const HTML_PREVIEW_DEBOUNCE_MS = 120
+const LARGE_HTML_PREVIEW_DEBOUNCE_MS = 800
+const EDITOR_EXTENSIONS = [
+  markdown({ base: markdownLanguage, codeLanguages: languages }),
+  EditorView.lineWrapping
+]
+const EDITOR_BASIC_SETUP = {
+  lineNumbers: true,
+  highlightActiveLine: true,
+  foldGutter: false,
+  dropCursor: false,
+  allowMultipleSelections: false,
+  indentOnInput: true,
+}
+const EDITOR_STYLE = { height: '100%', fontSize: '13px' }
 
 function App() {
   const [markdownContent, setMarkdownContent] = useState(`# Добро пожаловать в Markdown to PDF Converter
@@ -41,7 +63,9 @@ function hello() {
 
 > Это цитата для демонстрации стилей.
 
-**Жирный текст** и *курсив* также поддерживаются.`)
+**Жирный текст**, *курсив* и <mark>выделение маркером</mark> также поддерживаются.`)
+
+  const [previewMarkdown, setPreviewMarkdown] = useState(markdownContent)
 
   const [settings, setSettings] = useState({
     font_family: 'Inter',
@@ -55,12 +79,20 @@ function hello() {
     background_color: '#ffffff'
   })
 
-  const [pdfData, setPdfData] = useState(null)
+  const [pdfUrl, setPdfUrl] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [autoPreview, setAutoPreview] = useState(true)
+  const [isPreviewStale, setIsPreviewStale] = useState(true)
   const [error, setError] = useState(null)
   const [fileName, setFileName] = useState('document')
   const fileInputRef = useRef(null)
   const editorViewRef = useRef(null)
+  const pdfBlobRef = useRef(null)
+  const previewUrlRef = useRef(null)
+  const pendingRenderRef = useRef(null)
+  const renderInFlightRef = useRef(false)
+  const latestRenderInputRef = useRef(null)
+  const largeDocumentDetectedRef = useRef(false)
   const [showToolbar, setShowToolbar] = useState(false)
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 })
   const backendUrl = (() => {
@@ -78,7 +110,11 @@ function hello() {
 
   const [backendReady, setBackendReady] = useState(false)
   const [backendStatus, setBackendStatus] = useState('starting')
-  const pendingConvert = useRef(false)
+  const backendReadyRef = useRef(false)
+  const isLargeDocument = markdownContent.length >= LARGE_DOCUMENT_THRESHOLD
+  const isHtmlPreviewStale = IS_ELECTRON && previewMarkdown !== markdownContent
+
+  latestRenderInputRef.current = { content: markdownContent, settings }
 
   const undo = useCallback(() => {
     if (editorViewRef.current) cmUndo(editorViewRef.current)
@@ -88,80 +124,152 @@ function hello() {
     if (editorViewRef.current) cmRedo(editorViewRef.current)
   }, [])
 
-  const convertToPdf = useCallback(async () => {
-    if (!markdownContent.trim()) return
+  const handleEditorChange = useCallback((value) => {
+    setMarkdownContent(value)
+  }, [])
 
-    if (!backendReady) {
-      pendingConvert.current = true
+  const handleEditorCreate = useCallback((view) => {
+    editorViewRef.current = view
+  }, [])
+
+  const replacePreview = useCallback((pdfBlob) => {
+    const nextUrl = URL.createObjectURL(pdfBlob)
+    const previousUrl = previewUrlRef.current
+
+    pdfBlobRef.current = pdfBlob
+    previewUrlRef.current = nextUrl
+    setPdfUrl(nextUrl)
+
+    if (previousUrl) {
+      window.setTimeout(() => URL.revokeObjectURL(previousUrl), 0)
+    }
+  }, [])
+
+  const processRenderQueue = useCallback(async () => {
+    if (renderInFlightRef.current || !backendReadyRef.current || !pendingRenderRef.current) return
+
+    renderInFlightRef.current = true
+    setIsLoading(true)
+
+    try {
+      while (backendReadyRef.current && pendingRenderRef.current) {
+        const job = pendingRenderRef.current
+        pendingRenderRef.current = null
+        setError(null)
+
+        try {
+          const response = await fetch(`${backendUrl}/convert/pdf`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/pdf'
+            },
+            body: JSON.stringify({
+              content: job.content,
+              ...job.settings
+            })
+          })
+
+          if (!response.ok) {
+            let detail = `HTTP ${response.status}`
+            try {
+              const errorJson = await response.json()
+              if (errorJson?.detail) detail = errorJson.detail
+            } catch {
+              // Ignore malformed error responses.
+            }
+            throw new Error(detail)
+          }
+
+          const pdfBlob = await response.blob()
+          const latestInput = latestRenderInputRef.current
+          const isLatestInput = job.content === latestInput.content && job.settings === latestInput.settings
+
+          if (isLatestInput) {
+            replacePreview(pdfBlob)
+            setIsPreviewStale(false)
+          }
+        } catch (err) {
+          const message = err?.message || String(err)
+          const isNetworkError = /Failed to fetch|NetworkError|Load failed/i.test(message)
+
+          if (isNetworkError) {
+            if (!pendingRenderRef.current) pendingRenderRef.current = job
+            backendReadyRef.current = false
+            setBackendReady(false)
+            setBackendStatus('starting')
+            setError('Backend запускается, подождите…')
+          } else {
+            const latestInput = latestRenderInputRef.current
+            if (job.content === latestInput.content && job.settings === latestInput.settings) {
+              setError(`Ошибка: ${message}`)
+            }
+          }
+        }
+      }
+    } finally {
+      renderInFlightRef.current = false
+      setIsLoading(Boolean(pendingRenderRef.current && !backendReadyRef.current))
+    }
+  }, [backendUrl, replacePreview])
+
+  const queuePdfRender = useCallback((content, currentSettings) => {
+    if (!content.trim()) return
+
+    pendingRenderRef.current = { content, settings: currentSettings }
+    setIsPreviewStale(true)
+    setError(null)
+
+    if (!backendReadyRef.current) {
       setIsLoading(true)
-      setError(null)
       return
     }
 
-    setIsLoading(true)
-    setError(null)
+    void processRenderQueue()
+  }, [processRenderQueue])
 
-    try {
-      const response = await fetch(`${backendUrl}/convert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          content: markdownContent,
-          ...settings
-        })
-      })
+  const renderCurrentDocument = useCallback(() => {
+    queuePdfRender(markdownContent, settings)
+  }, [markdownContent, queuePdfRender, settings])
 
-      if (!response.ok) {
-        let detail = `HTTP ${response.status}`
-        try {
-          const errorJson = await response.json()
-          if (errorJson?.detail) detail = errorJson.detail
-        } catch (_) {
-          // ignore json parse errors
-        }
-        throw new Error(detail)
-      }
-
-      const result = await response.json()
-
-      if (result.success) {
-        setPdfData(result.pdf_base64)
-      } else {
-        setError(result.message || 'Ошибка при конвертации')
-      }
-    } catch (err) {
-      const message = (err && err.message) ? err.message : String(err)
-      if (/Failed to fetch|NetworkError|NetworkError when attempting to fetch resource/i.test(message)) {
-        setBackendStatus('starting')
-        pendingConvert.current = true
-        setError('Backend запускается, подождите…')
-      } else {
-        setError(`Ошибка: ${message}`)
-      }
-    } finally {
-      setIsLoading(false)
-    }
-  }, [markdownContent, settings, backendReady, backendUrl])
-
-  // Автоматическая конвертация при изменении контента или настроек
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      convertToPdf()
-    }, 1000) // Debounce 1 секунда
+    if (IS_ELECTRON) return
+    setIsPreviewStale(Boolean(markdownContent.trim()))
+  }, [markdownContent, settings])
 
-    return () => clearTimeout(timeoutId)
-  }, [convertToPdf])
+  useEffect(() => {
+    if (IS_ELECTRON) return
+    if (isLargeDocument && !largeDocumentDetectedRef.current) {
+      pendingRenderRef.current = null
+      setAutoPreview(false)
+      if (!renderInFlightRef.current) setIsLoading(false)
+    }
+    largeDocumentDetectedRef.current = isLargeDocument
+  }, [isLargeDocument])
+
+  // Большие документы рендерятся вручную по умолчанию. Если автообновление
+  // включено пользователем, оно получает более длинную паузу после ввода.
+  useEffect(() => {
+    if (IS_ELECTRON || !autoPreview || !markdownContent.trim()) return undefined
+
+    const delay = isLargeDocument ? LARGE_PREVIEW_DEBOUNCE_MS : PREVIEW_DEBOUNCE_MS
+    const timeoutId = window.setTimeout(() => {
+      queuePdfRender(markdownContent, settings)
+    }, delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [autoPreview, isLargeDocument, markdownContent, queuePdfRender, settings])
 
   // Проверка готовности backend (для Electron/Web)
   useEffect(() => {
-    setBackendReady(false)
+    if (IS_ELECTRON || backendReady) return undefined
+
     let cancelled = false
+    let timeoutId
     let attempts = 0
 
     const check = async () => {
-      if (cancelled || backendReady) return
+      if (cancelled) return
       try {
         const res = await fetch(`${backendUrl}/health`, { cache: 'no-store' })
         if (res.ok) {
@@ -169,49 +277,78 @@ function hello() {
           setBackendStatus('ready')
           return
         }
-      } catch (_) {
-        // ignore
+      } catch {
+        // Backend may still be starting.
       }
 
       attempts += 1
       setBackendStatus('starting')
       const delay = Math.min(500 + attempts * 200, 3000)
-      setTimeout(check, delay)
+      timeoutId = window.setTimeout(check, delay)
     }
 
-    check()
+    void check()
     return () => {
       cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
     }
-  }, [backendUrl])
+  }, [backendReady, backendUrl])
 
-  // Если backend только что поднялся, делаем отложенную конвертацию
   useEffect(() => {
-    if (backendReady && pendingConvert.current) {
-      pendingConvert.current = false
-      convertToPdf()
+    if (IS_ELECTRON) return
+    backendReadyRef.current = backendReady
+    if (backendReady) void processRenderQueue()
+  }, [backendReady, processRenderQueue])
+
+  useEffect(() => {
+    if (!IS_ELECTRON) return undefined
+
+    const delay = isLargeDocument
+      ? LARGE_HTML_PREVIEW_DEBOUNCE_MS
+      : HTML_PREVIEW_DEBOUNCE_MS
+    const timeoutId = window.setTimeout(() => {
+      startTransition(() => setPreviewMarkdown(markdownContent))
+    }, delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isLargeDocument, markdownContent])
+
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+  }, [])
+
+  const downloadPdf = async () => {
+    if (IS_ELECTRON) {
+      if (!markdownContent.trim() || isLoading) return
+
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        await new Promise((resolve) => window.requestAnimationFrame(resolve))
+        const { renderMarkdownToHtml } = await import('@/components/markdown-export.js')
+        const html = renderMarkdownToHtml(markdownContent)
+        await window.electron.exportPdf({
+          html,
+          settings,
+          fileName: `${fileName || 'document'}.pdf`,
+        })
+      } catch (err) {
+        setError(`Ошибка экспорта: ${err?.message || String(err)}`)
+      } finally {
+        setIsLoading(false)
+      }
+      return
     }
-  }, [backendReady, convertToPdf])
 
-  const downloadPdf = () => {
-    if (!pdfData) return
+    if (!pdfBlobRef.current || !previewUrlRef.current) return
 
-    const byteCharacters = atob(pdfData)
-    const byteNumbers = new Array(byteCharacters.length)
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i)
-    }
-    const byteArray = new Uint8Array(byteNumbers)
-    const blob = new Blob([byteArray], { type: 'application/pdf' })
-
-    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = previewUrlRef.current
     a.download = `${fileName}.pdf`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-    URL.revokeObjectURL(url)
   }
 
   const handleFileUpload = (event) => {
@@ -351,7 +488,7 @@ function hello() {
         const mouseY = e?.clientY
 
         if (mouseX && mouseY) {
-          const toolbarWidth = 280
+          const toolbarWidth = 320
           const toolbarHeight = 40
 
           let left = mouseX - (toolbarWidth / 2)
@@ -411,9 +548,14 @@ function hello() {
             <Input value={fileName} onChange={(e) => setFileName(e.target.value)} className="h-8 w-28 text-sm" placeholder="document" />
             <span className="text-sm text-muted-foreground">.pdf</span>
           </div>
-          <Button onClick={downloadPdf} disabled={!pdfData || isLoading} size="sm" className="gap-1.5 shrink-0">
+          <Button
+            onClick={downloadPdf}
+            disabled={IS_ELECTRON ? !markdownContent.trim() || isLoading : !pdfUrl}
+            size="sm"
+            className="gap-1.5 shrink-0"
+          >
             <Download className="h-3.5 w-3.5" />
-            Скачать PDF
+            {IS_ELECTRON && isLoading ? 'Создание PDF…' : 'Скачать PDF'}
           </Button>
 
           <div className="w-px h-6 bg-border shrink-0 mx-1" />
@@ -532,6 +674,15 @@ function hello() {
                   >
                     <Italic className="h-3.5 w-3.5" />
                   </Button>
+                  <Button
+                    onClick={() => { insertFormatting('<mark>', '</mark>', 'выделенный текст'); setShowToolbar(false); }}
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-amber-600"
+                    title="Выделить маркером"
+                  >
+                    <Highlighter className="h-3.5 w-3.5" />
+                  </Button>
                   <Separator orientation="vertical" className="h-5" />
                   <Button
                     onClick={() => { insertLineFormatting('# ', 'Заголовок 1'); setShowToolbar(false); }}
@@ -611,6 +762,15 @@ function hello() {
                   title="Курсив (Ctrl+I)"
                 >
                   <Italic className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  onClick={() => insertFormatting('<mark>', '</mark>', 'выделенный текст')}
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-amber-600"
+                  title="Выделить маркером"
+                >
+                  <Highlighter className="h-3.5 w-3.5" />
                 </Button>
                 <Separator orientation="vertical" className="h-5" />
                 <Button
@@ -694,64 +854,138 @@ function hello() {
               <div className="flex-1 min-h-0 overflow-auto" onMouseUp={handleTextSelect}>
                 <CodeMirror
                   value={markdownContent}
-                  onChange={(value) => setMarkdownContent(value)}
-                  onCreateEditor={(view) => { editorViewRef.current = view }}
-                  extensions={[markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping]}
-                  basicSetup={{
-                    lineNumbers: true,
-                    highlightActiveLine: true,
-                    foldGutter: false,
-                    dropCursor: false,
-                    allowMultipleSelections: false,
-                    indentOnInput: true,
-                  }}
-                  style={{ height: '100%', fontSize: '13px' }}
+                  onChange={handleEditorChange}
+                  onCreateEditor={handleEditorCreate}
+                  extensions={EDITOR_EXTENSIONS}
+                  basicSetup={EDITOR_BASIC_SETUP}
+                  style={EDITOR_STYLE}
                   placeholder="Введите ваш Markdown текст здесь..."
                 />
               </div>
             </CardContent>
           </Card>
 
-          {/* Предпросмотр PDF */}
+          {/* Предпросмотр документа */}
           <Card className="flex flex-col">
-            <CardContent className="p-2 flex-1 min-h-0">
-              {isLoading && (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-                    <p className="text-sm text-muted-foreground">
-                      {backendStatus === 'ready' ? 'Генерация PDF...' : 'Запуск backend...'}
-                    </p>
+            <CardContent className="p-2 flex-1 min-h-0 flex flex-col gap-2">
+              {IS_ELECTRON ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 min-h-8 px-1">
+                    <span className="text-xs font-medium">HTML-предпросмотр</span>
+                    <span
+                      className={`text-xs ${error && !isLoading ? 'text-destructive' : 'text-muted-foreground'}`}
+                      aria-live="polite"
+                    >
+                      {isLoading
+                        ? 'Создание PDF…'
+                        : error
+                          ? 'Ошибка экспорта'
+                          : isHtmlPreviewStale
+                            ? 'Обновление…'
+                            : 'Актуально'}
+                    </span>
                   </div>
-                </div>
-              )}
 
-              {error && !isLoading && (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <p className="text-sm text-destructive mb-2">Ошибка генерации PDF</p>
-                    <p className="text-xs text-muted-foreground">{error}</p>
+                  {error && !isLoading && (
+                    <p className="px-1 text-xs text-destructive">{error}</p>
+                  )}
+
+                  <div className="flex-1 min-h-0 overflow-hidden border rounded-md">
+                    <MarkdownPreview content={previewMarkdown} settings={settings} />
                   </div>
-                </div>
-              )}
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 min-h-8 px-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Switch
+                        id="auto-preview"
+                        checked={autoPreview}
+                        onCheckedChange={setAutoPreview}
+                        aria-label="Автоматически обновлять PDF"
+                      />
+                      <label htmlFor="auto-preview" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+                        Автопросмотр
+                      </label>
+                      {isLargeDocument && (
+                        <span className="text-xs text-amber-700 whitespace-nowrap">
+                          Большой документ
+                        </span>
+                      )}
+                    </div>
 
-              {pdfData && !isLoading && !error && (
-                <div className="h-full border rounded-md overflow-hidden">
-                  <iframe
-                    src={`data:application/pdf;base64,${pdfData}`}
-                    className="w-full h-full"
-                    title="PDF Preview"
-                  />
-                </div>
-              )}
-
-              {!pdfData && !isLoading && !error && (
-                <div className="flex items-center justify-center h-full border rounded-md bg-muted/50">
-                  <div className="text-center">
-                    <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">PDF появится здесь</p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`text-xs ${error && !isLoading ? 'text-destructive' : 'text-muted-foreground'}`}
+                        aria-live="polite"
+                      >
+                        {backendStatus !== 'ready' && isLoading
+                          ? 'Запуск backend…'
+                          : isLoading
+                            ? 'Генерация PDF…'
+                            : error
+                              ? 'Ошибка генерации'
+                              : isPreviewStale
+                                ? 'Есть изменения'
+                                : pdfUrl
+                                  ? 'Готово'
+                                  : ''}
+                      </span>
+                      <Button
+                        onClick={renderCurrentDocument}
+                        disabled={!markdownContent.trim()}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5"
+                        title="Обновить предпросмотр PDF"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Обновить
+                      </Button>
+                    </div>
                   </div>
-                </div>
+
+                  <div className="flex-1 min-h-0">
+                    {pdfUrl && (
+                      <div className="h-full border rounded-md overflow-hidden">
+                        <iframe
+                          src={pdfUrl}
+                          className="w-full h-full"
+                          title="PDF Preview"
+                        />
+                      </div>
+                    )}
+
+                    {!pdfUrl && isLoading && (
+                      <div className="flex items-center justify-center h-full border rounded-md bg-muted/30">
+                        <div className="text-center">
+                          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            {backendStatus === 'ready' ? 'Генерация PDF...' : 'Запуск backend...'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!pdfUrl && error && !isLoading && (
+                      <div className="flex items-center justify-center h-full border rounded-md">
+                        <div className="text-center">
+                          <p className="text-sm text-destructive mb-2">Ошибка генерации PDF</p>
+                          <p className="text-xs text-muted-foreground">{error}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!pdfUrl && !isLoading && !error && (
+                      <div className="flex items-center justify-center h-full border rounded-md bg-muted/50">
+                        <div className="text-center">
+                          <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">Предпросмотр не обновлён</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

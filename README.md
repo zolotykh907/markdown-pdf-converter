@@ -30,7 +30,7 @@ brew install python3 node
 
 ✔️ Редактор Markdown с подсветкой синтаксиса
 
-✔️ Предпросмотр PDF в реальном времени
+✔️ Быстрый HTML-предпросмотр в desktop-приложении
 
 ✔️ Настройка стилей документа:
   - Выбор шрифта
@@ -40,6 +40,8 @@ brew install python3 node
   - Настройка отступов страницы
 
 ✔️ Автоматическое обновление при изменении текста или стилей
+
+✔️ Отложенное обновление HTML-предпросмотра для больших документов
 
 ✔️ Скачивание готового PDF файла
 
@@ -56,13 +58,20 @@ brew install python3 node
 ### Backend (FastAPI)
 - **Технологии**: Python, FastAPI, weasyprint, Markdown
 - **Порт**: 8000
+- **Назначение**: конвертация в браузерной версии
 - **API эндпоинты**:
   - `GET /` - информация о API
   - `POST /convert` - конвертация Markdown в PDF
+  - `POST /convert/pdf` - бинарный PDF без base64 для быстрого предпросмотра
 
 ### Frontend (React)
 - **Технологии**: React, Vite, Tailwind CSS
 - **Порт**: 5175 (dev)
+
+### Desktop (Electron)
+- HTML-предпросмотр через React без генерации PDF при вводе
+- Экспорт через встроенный Chromium `webContents.printToPDF`
+- Python и WeasyPrint в desktop-сборку не входят
 
 ## Deploy в Netlify
 
@@ -150,34 +159,40 @@ Frontend: http://localhost:5173
 
 ## Desktop приложение (macOS/Windows)
 
-### Быстрый старт
-
-#### 1. Первоначальная настройка
+### Первоначальная установка
 
 ```bash
-./setup-electron.sh
+cd frontend
+npm install
+cd ../electron
+npm install
 ```
 
-Этот скрипт автоматически:
-- Установит все зависимости Python backend
-- Соберёт React frontend
-- Установит Electron зависимости
+### Запуск в режиме разработки
 
-#### 2. Запуск в режиме разработки
+В первом терминале:
 
 ```bash
-./start-electron-dev.sh
+cd frontend
+ELECTRON_DEV=1 npm run dev
 ```
 
-Откроется desktop приложение в режиме разработки.
-
-#### 3. Сборка приложения
+Во втором терминале:
 
 ```bash
-./build-app.sh
+cd electron
+npm run dev
 ```
 
-Выберите платформу (macOS/Windows/Both) и получите готовый установщик в [electron/dist/](electron/dist/)
+### Сборка приложения
+
+```bash
+cd electron
+npm run build:mac
+```
+
+Команда автоматически пересоберёт frontend и создаст приложение в `electron/dist/mac-arm64/`.
+Для Windows используйте `npm run build:win` непосредственно на Windows.
 
 **Результат:**
 - macOS: `.dmg` файл для установки
@@ -188,7 +203,7 @@ Frontend: http://localhost:5173
 
 ✅ Полноценное desktop приложение с иконкой
 
-✅ Запуск одним кликом - не нужно запускать сервера вручную
+✅ Запуск одним кликом - локальный backend не требуется
 
 ✅ Работает офлайн
 
@@ -204,5 +219,5 @@ Frontend: http://localhost:5173
    - Настройте межстрочный интервал
    - Выберите цвета текста и фона
    - Настройте отступы страницы
-4. PDF автоматически обновится в центральной панели предпросмотра
-5. Нажмите "Скачать PDF" для сохранения файла
+4. HTML-предпросмотр автоматически обновится в правой панели
+5. Нажмите "Скачать PDF" для генерации и сохранения файла через Chromium

@@ -1,167 +1,197 @@
-const { app, BrowserWindow, Menu } = require('electron');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const url = require('url');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const url = require('node:url');
 
 let mainWindow;
-let backendProcess;
+let printWindow;
 const isDev = process.env.NODE_ENV === 'development';
 
-// Путь к Python в зависимости от платформы
-function getPythonPath() {
-  if (app.isPackaged) {
-    // В упакованном приложении
-    if (process.platform === 'win32') {
-      return path.join(process.resourcesPath, 'backend', 'venv', 'Scripts', 'python.exe');
-    } else {
-      return path.join(process.resourcesPath, 'backend', 'venv', 'bin', 'python');
-    }
-  } else {
-    // В режиме разработки
-    if (process.platform === 'win32') {
-      return path.join(__dirname, '..', 'backend', 'venv', 'Scripts', 'python.exe');
-    } else {
-      return path.join(__dirname, '..', 'backend', 'venv', 'bin', 'python');
-    }
-  }
+const FONT_FAMILIES = {
+  Inter: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  Arial: 'Arial, sans-serif',
+  Helvetica: 'Helvetica, Arial, sans-serif',
+  'Times-Roman': 'Times, "Times New Roman", serif',
+  Courier: 'Courier, "Courier New", monospace',
+  Georgia: 'Georgia, "Times New Roman", serif',
+  Verdana: 'Verdana, Arial, sans-serif',
+};
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(Math.max(number, min), max);
 }
 
-// Путь к app.py
-function getBackendPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'backend', 'app.py');
-  } else {
-    return path.join(__dirname, '..', 'backend', 'app.py');
-  }
+function safeColor(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
 }
 
-// Получить путь к standalone backend executable (если существует)
-function getStandaloneBackendPath() {
-  const execName = process.platform === 'win32' ? 'markdown-pdf-backend.exe' : 'markdown-pdf-backend';
-  const baseDir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+function createPrintDocument(contentHtml, settings = {}) {
+  const fontFamily = FONT_FAMILIES[settings.font_family] || FONT_FAMILIES.Inter;
+  const fontSize = clampNumber(settings.font_size, 12, 8, 24);
+  const lineHeight = clampNumber(settings.line_height, 1.6, 1, 3);
+  const marginTop = clampNumber(settings.margin_top, 72, 0, 200);
+  const marginRight = clampNumber(settings.margin_right, 72, 0, 200);
+  const marginBottom = clampNumber(settings.margin_bottom, 72, 0, 200);
+  const marginLeft = clampNumber(settings.margin_left, 72, 0, 200);
+  const textColor = safeColor(settings.text_color, '#000000');
+  const backgroundColor = safeColor(settings.background_color, '#ffffff');
 
-  // Prefer onedir bundle for faster startup
-  const onedirPath = path.join(baseDir, 'backend', 'dist', 'markdown-pdf-backend', execName);
-  if (fs.existsSync(onedirPath)) return onedirPath;
-
-  // Fallback to onefile bundle
-  return path.join(baseDir, 'backend', 'dist', execName);
-}
-
-// Проверка доступности backend (быстрая версия)
-async function waitForBackend(maxAttempts = 20) {
-  const http = require('http');
-
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await new Promise((resolve, reject) => {
-        const req = http.get('http://localhost:8000/', (res) => {
-          resolve(true);
-        });
-        req.on('error', reject);
-        req.setTimeout(500);
-      });
-      console.log('Backend is ready!');
-      return true;
-    } catch (err) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-  }
-  console.error('Backend failed to start after timeout');
-  return false;
-}
-
-// Запуск Python backend
-function startBackend() {
-  return new Promise((resolve, reject) => {
-    const backendPath = getBackendPath();
-    const standalonePath = getStandaloneBackendPath();
-
-    let command;
-    let args = [];
-    let useStandalone = false;
-
-    console.log('=================================');
-    console.log('Starting backend...');
-    console.log('Is packaged:', app.isPackaged);
-    console.log('Platform:', process.platform);
-    console.log('Backend path:', backendPath);
-    console.log('Standalone path:', standalonePath);
-    console.log('Resources path:', app.isPackaged ? process.resourcesPath : 'N/A');
-    console.log('=================================');
-
-    // Проверяем standalone executable
-    if (fs.existsSync(standalonePath)) {
-      console.log('✓ Found standalone backend executable');
-      command = standalonePath;
-      useStandalone = true;
-    } else {
-      console.log('Standalone backend not found, using Python...');
-
-      // Проверяем существование backend файла
-      if (!fs.existsSync(backendPath)) {
-        console.error('ERROR: Backend app.py not found at:', backendPath);
-        reject(new Error('Backend not found'));
-        return;
-      }
-
-      const pythonPath = getPythonPath();
-      if (!fs.existsSync(pythonPath)) {
-        console.error('ERROR: Python interpreter not found at:', pythonPath);
-        reject(new Error('Python interpreter not found'));
-        return;
-      }
-
-      command = pythonPath;
-      args = ['-u', backendPath]; // -u для unbuffered output
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page {
+      size: A4;
+      margin: ${marginTop}pt ${marginRight}pt ${marginBottom}pt ${marginLeft}pt;
     }
 
-    const cwd = app.isPackaged
-      ? path.join(process.resourcesPath, 'backend')
-      : path.join(__dirname, '..', 'backend');
+    * { box-sizing: border-box; }
 
-    console.log('Executing:', command, args.join(' '));
-    console.log('Working directory:', cwd);
-    console.log('Directory exists:', fs.existsSync(cwd));
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: ${textColor};
+      background: ${backgroundColor};
+      font-family: ${fontFamily};
+      font-size: ${fontSize}pt;
+      line-height: ${lineHeight};
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
 
-    backendProcess = spawn(command, args, {
-      cwd: cwd,
-      env: { ...process.env }
-    });
+    h1, h2, h3, h4, h5, h6 {
+      color: ${textColor};
+      font-weight: 700;
+      break-after: avoid;
+    }
 
-    backendProcess.stdout.on('data', (data) => {
-      console.log(`[Backend] ${data.toString().trim()}`);
-    });
+    h1 { font-size: ${fontSize * 2}pt; margin: 18pt 0 12pt; }
+    h2 { font-size: ${fontSize * 1.5}pt; margin: 14pt 0 10pt; }
+    h3, h4, h5, h6 { font-size: ${fontSize * 1.25}pt; margin: 12pt 0 8pt; }
+    p { margin: 0 0 12pt; text-align: justify; }
+    ul, ol { margin: 0 0 12pt; padding-left: 20pt; }
+    li { margin: 0 0 6pt; }
+    a { color: #2563eb; text-decoration: underline; }
+    img { display: block; max-width: 100%; height: auto; margin: 12pt auto; break-inside: avoid; }
 
-    backendProcess.stderr.on('data', (data) => {
-      console.error(`[Backend Error] ${data.toString().trim()}`);
-    });
+    code {
+      border-radius: 3pt;
+      background: #f3f4f6;
+      padding: 2pt 4pt;
+      font-family: "Courier New", Courier, monospace;
+    }
 
-    backendProcess.on('error', (err) => {
-      console.error('Failed to start backend:', err);
-      reject(err);
-    });
+    pre {
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      margin: 12pt 0;
+      border-radius: 6pt;
+      background: #f3f4f6;
+      padding: 12pt;
+      break-inside: avoid;
+    }
 
-    backendProcess.on('close', (code) => {
-      console.log(`Backend process exited with code ${code}`);
-    });
+    pre code { background: transparent; padding: 0; }
+    mark { border-radius: 2pt; background: #fff176; color: inherit; padding: 0 2pt; }
 
-    // Не ждём - сразу возвращаем
-    resolve();
+    blockquote {
+      margin: 12pt 0;
+      border-left: 4pt solid #d1d5db;
+      padding-left: 20pt;
+      font-style: italic;
+    }
+
+    table { width: 100%; margin: 12pt 0; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+    th, td { border: 1pt solid #d1d5db; padding: 8pt; text-align: left; }
+    th { background: #f3f4f6; font-weight: 700; }
+    hr { margin: 18pt 0; border: 0; border-top: 1pt solid #d1d5db; }
+    input[type="checkbox"] { margin-right: 6pt; }
+  </style>
+</head>
+<body>${contentHtml}</body>
+</html>`;
+}
+
+function getPrintWindow() {
+  if (printWindow && !printWindow.isDestroyed()) return printWindow;
+
+  printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+
+  printWindow.on('closed', () => {
+    printWindow = null;
+  });
+
+  return printWindow;
+}
+
+async function renderPdf(contentHtml, settings) {
+  const documentHtml = createPrintDocument(contentHtml, settings);
+  const documentUrl = `data:text/html;charset=utf-8;base64,${Buffer.from(documentHtml).toString('base64')}`;
+  const targetWindow = getPrintWindow();
+
+  await targetWindow.loadURL(documentUrl);
+  await targetWindow.webContents.executeJavaScript(`
+    Promise.all([
+      document.fonts ? document.fonts.ready : Promise.resolve(),
+      ...Array.from(document.images).map((image) => image.complete
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            image.addEventListener('load', resolve, { once: true });
+            image.addEventListener('error', resolve, { once: true });
+          }))
+    ]).then(() => true)
+  `);
+
+  return targetWindow.webContents.printToPDF({
+    pageSize: 'A4',
+    printBackground: true,
+    preferCSSPageSize: true,
   });
 }
 
-// Остановка backend при закрытии приложения
-function stopBackend() {
-  if (backendProcess) {
-    console.log('Stopping backend...');
-    backendProcess.kill();
-    backendProcess = null;
-  }
+function sanitizePdfName(value) {
+  const baseName = String(value || 'document.pdf')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+    .trim();
+  return baseName.toLowerCase().endsWith('.pdf') ? baseName : `${baseName}.pdf`;
 }
 
-// Создание главного окна
+ipcMain.handle('pdf:export', async (event, payload = {}) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error('PDF export is only available from the main application window');
+  }
+
+  if (typeof payload.html !== 'string' || !payload.html.trim()) {
+    throw new Error('Document is empty');
+  }
+
+  const fileName = sanitizePdfName(payload.fileName);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Сохранить PDF',
+    defaultPath: path.join(app.getPath('documents'), fileName),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  const pdfBuffer = await renderPdf(payload.html, payload.settings);
+  await fs.promises.writeFile(result.filePath, pdfBuffer);
+  return { canceled: false, filePath: result.filePath };
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -172,63 +202,34 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      // В production режиме нужно разрешить загрузку локальных файлов
-      webSecurity: isDev ? true : false,
+      webSecurity: isDev,
     },
     icon: path.join(__dirname, '..', 'frontend', 'public', 'favicon.png'),
     title: 'Markdown to PDF Converter',
-    show: false, // Не показываем окно до загрузки
+    show: false,
   });
 
-  // Показываем окно когда готово
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  // DevTools только в dev режиме
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
+  if (isDev) mainWindow.webContents.openDevTools();
 
-  // Логируем ошибки загрузки
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
   });
 
-  // Загружаем frontend
   if (isDev) {
-    // В режиме разработки - из Vite dev server
-    console.log('Loading from Vite dev server: http://localhost:5173');
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    // В продакшене - из собранных файлов
     const indexPath = app.isPackaged
       ? path.join(process.resourcesPath, 'frontend', 'dist', 'index.html')
       : path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
 
-    console.log('Loading from file:', indexPath);
-    console.log('File exists:', fs.existsSync(indexPath));
-    console.log('Absolute path:', path.resolve(indexPath));
-
     if (!fs.existsSync(indexPath)) {
-      console.error('ERROR: index.html not found at:', indexPath);
-      console.error('Resources path:', process.resourcesPath);
-      console.error('__dirname:', __dirname);
-
-      // Показываем список файлов для отладки
-      const resourcesDir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'frontend', 'dist');
-      console.error('Contents of resources dir:');
-      if (fs.existsSync(resourcesDir)) {
-        console.error(fs.readdirSync(resourcesDir));
-      }
+      console.error('Frontend build not found:', indexPath);
     }
 
-    // Используем file:// URL для загрузки
-    const fileUrl = url.pathToFileURL(indexPath).href;
-    console.log('Loading URL:', fileUrl);
-
-    mainWindow.loadURL(fileUrl).catch(err => {
-      console.error('Error loading file:', err);
+    mainWindow.loadURL(url.pathToFileURL(indexPath).href).catch((error) => {
+      console.error('Error loading frontend:', error);
     });
   }
 
@@ -237,51 +238,22 @@ function createWindow() {
   });
 }
 
-// Запуск приложения
-app.whenReady().then(async () => {
-  console.log('App is ready, starting...');
-
-  // Сразу создаём окно (UI появится быстро)
+app.whenReady().then(() => {
   createWindow();
 
-  // Параллельно запускаем backend
-  try {
-    startBackend();
-    console.log('Backend starting in background...');
-
-    // Ждём backend в фоне (не блокируем UI)
-    waitForBackend().then(isReady => {
-      if (!isReady) {
-        console.error('WARNING: Backend might not be running properly');
-      } else {
-        console.log('Backend is fully ready');
-      }
-    });
-  } catch (err) {
-    console.error('Failed to start backend:', err);
-  }
-
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-// Закрытие приложения
 app.on('window-all-closed', () => {
-  stopBackend();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-  stopBackend();
+  if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
 });
 
-// Обработка ошибок
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
-  stopBackend();
 });

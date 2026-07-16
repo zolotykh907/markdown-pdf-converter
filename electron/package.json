@@ -6,11 +6,12 @@
   "scripts": {
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build:all": "electron-builder --mac --win",
-    "pack": "electron-builder --dir",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "build": "npm run build:frontend && electron-builder",
+    "build:mac": "npm run build:frontend && electron-builder --mac",
+    "build:win": "npm run build:frontend && electron-builder --win",
+    "build:all": "npm run build:frontend && electron-builder --mac --win",
+    "pack": "npm run build:frontend && electron-builder --dir",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -27,10 +28,6 @@
     ],
     "asar": true,
     "extraResources": [
-      {
-        "from": "../backend/dist/markdown-pdf-backend",
-        "to": "backend/dist/markdown-pdf-backend"
-      },
       {
         "from": "../frontend/dist",
         "to": "frontend/dist",
