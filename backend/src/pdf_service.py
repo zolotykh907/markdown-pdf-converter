@@ -102,7 +102,7 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
             }}
 
             mark {{
-                background-color: #fff176;
+                background-color: {settings['highlight_color']};
                 color: inherit;
                 padding: 0 2pt;
                 border-radius: 2pt;

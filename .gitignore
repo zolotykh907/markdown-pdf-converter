@@ -33,6 +33,8 @@ frontend/.DS_Store
 backend/venv/
 backend/.env
 .DS_Store
+.claude/
+tmp/
 
 # Electron
 electron/node_modules/

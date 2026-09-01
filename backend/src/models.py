@@ -13,6 +13,7 @@ class MarkdownRequest(BaseModel):
     margin_right: Optional[float] = 72
     text_color: Optional[str] = "#000000"
     background_color: Optional[str] = "#ffffff"
+    highlight_color: Optional[str] = "#fff176"
 
 
 class ConversionResponse(BaseModel):

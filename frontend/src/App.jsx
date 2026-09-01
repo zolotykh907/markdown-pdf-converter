@@ -3,6 +3,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { undo as cmUndo, redo as cmRedo } from '@codemirror/commands'
+import { SearchQuery, findNext, findPrevious, replaceAll, replaceNext, search as searchExtension, setSearchQuery } from '@codemirror/search'
 import { EditorView } from '@codemirror/view'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent } from '@/components/ui/card.jsx'
@@ -12,7 +13,7 @@ import { Separator } from '@/components/ui/separator.jsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx'
 import { Switch } from '@/components/ui/switch.jsx'
 import MarkdownPreview from '@/components/markdown-preview.jsx'
-import { Download, FileText, Upload, Bold, Italic, Highlighter, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, Undo2, Redo2, RefreshCw, Loader2 } from 'lucide-react'
+import { Download, FileText, Upload, Bold, Italic, Highlighter, Heading1, Heading2, List, ListOrdered, Code, Quote, Table, Undo2, Redo2, RefreshCw, Loader2, Search as SearchIcon, ChevronUp, ChevronDown, X } from 'lucide-react'
 import './App.css'
 
 const IS_ELECTRON = Boolean(window.electron?.isElectron)
@@ -23,7 +24,8 @@ const HTML_PREVIEW_DEBOUNCE_MS = 120
 const LARGE_HTML_PREVIEW_DEBOUNCE_MS = 800
 const EDITOR_EXTENSIONS = [
   markdown({ base: markdownLanguage, codeLanguages: languages }),
-  EditorView.lineWrapping
+  EditorView.lineWrapping,
+  searchExtension({ top: true })
 ]
 const EDITOR_BASIC_SETUP = {
   lineNumbers: true,
@@ -32,8 +34,109 @@ const EDITOR_BASIC_SETUP = {
   dropCursor: false,
   allowMultipleSelections: false,
   indentOnInput: true,
+  searchKeymap: false,
 }
 const EDITOR_STYLE = { height: '100%', fontSize: '13px' }
+const HIGHLIGHT_COLORS = [
+  '#fff176',
+  '#ffcc80',
+  '#ef9a9a',
+  '#f8bbd0',
+  '#ce93d8',
+  '#90caf9',
+  '#80deea',
+  '#a5d6a7',
+]
+
+function getSearchStats(view, query) {
+  if (!query.search) return { current: 0, total: 0, error: null }
+  if (!query.valid) return { current: 0, total: 0, error: 'Некорректное регулярное выражение' }
+
+  const selection = view.state.selection.main
+  let current = 0
+  let total = 0
+
+  for (const match of query.getCursor(view.state)) {
+    total += 1
+    if (match.from === selection.from && match.to === selection.to) current = total
+  }
+
+  return { current, total, error: null }
+}
+
+function getPreviewTarget(anchors, sourceLine) {
+  if (!anchors.length) return 0
+
+  let low = 0
+  let high = anchors.length - 1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (anchors[middle].line <= sourceLine) low = middle + 1
+    else high = middle - 1
+  }
+
+  const current = anchors[Math.max(0, high)]
+  const next = anchors[Math.min(anchors.length - 1, Math.max(0, high) + 1)]
+  if (current === next || next.line === current.line) return current.top
+
+  const progress = Math.min(1, Math.max(0, (sourceLine - current.line) / (next.line - current.line)))
+  return current.top + (next.top - current.top) * progress
+}
+
+function HighlightColorPicker({ color, onSelect, title = 'Выделить маркером' }) {
+  const [open, setOpen] = useState(false)
+  const colors = [color, ...HIGHLIGHT_COLORS.filter((item) => item !== color)]
+
+  const selectColor = (selectedColor) => {
+    onSelect(selectedColor)
+    setOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          style={{ color }}
+          title={title}
+          aria-label={title}
+        >
+          <Highlighter className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-auto p-2">
+        <div className="grid grid-cols-5 gap-1.5">
+          {colors.map((item, index) => (
+            <button
+              key={item}
+              type="button"
+              className="h-7 w-7 rounded border shadow-sm hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              style={{ backgroundColor: item }}
+              onClick={() => selectColor(item)}
+              title={index === 0 ? `Текущий цвет ${item}` : item}
+              aria-label={index === 0 ? `Текущий цвет ${item}` : `Цвет маркера ${item}`}
+            />
+          ))}
+          <label
+            className="relative flex h-7 w-7 cursor-pointer items-center justify-center overflow-hidden rounded border bg-background shadow-sm hover:ring-2 hover:ring-ring"
+            title="Другой цвет"
+          >
+            <span className="text-sm font-medium">+</span>
+            <input
+              type="color"
+              value={color}
+              onChange={(event) => selectColor(event.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              aria-label="Выбрать другой цвет маркера"
+            />
+          </label>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 function App() {
   const [markdownContent, setMarkdownContent] = useState(`# Добро пожаловать в Markdown to PDF Converter
@@ -76,7 +179,8 @@ function hello() {
     margin_left: 72,
     margin_right: 72,
     text_color: '#000000',
-    background_color: '#ffffff'
+    background_color: '#ffffff',
+    highlight_color: '#fff176'
   })
 
   const [pdfUrl, setPdfUrl] = useState(null)
@@ -85,8 +189,19 @@ function hello() {
   const [isPreviewStale, setIsPreviewStale] = useState(true)
   const [error, setError] = useState(null)
   const [fileName, setFileName] = useState('document')
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [replaceText, setReplaceText] = useState('')
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false)
+  const [searchRegexp, setSearchRegexp] = useState(false)
+  const [searchStats, setSearchStats] = useState({ current: 0, total: 0, error: null })
+  const [syncScroll, setSyncScroll] = useState(true)
   const fileInputRef = useRef(null)
   const editorViewRef = useRef(null)
+  const searchInputRef = useRef(null)
+  const previewScrollRef = useRef(null)
+  const previewAnchorsRef = useRef([])
+  const syncFrameRef = useRef(null)
   const pdfBlobRef = useRef(null)
   const previewUrlRef = useRef(null)
   const pendingRenderRef = useRef(null)
@@ -131,6 +246,70 @@ function hello() {
   const handleEditorCreate = useCallback((view) => {
     editorViewRef.current = view
   }, [])
+
+  const buildSearchQuery = useCallback(() => new SearchQuery({
+    search: searchText,
+    replace: replaceText,
+    caseSensitive: searchCaseSensitive,
+    regexp: searchRegexp,
+  }), [replaceText, searchCaseSensitive, searchRegexp, searchText])
+
+  const updateSearch = useCallback((command) => {
+    const view = editorViewRef.current
+    if (!view) return
+
+    const query = buildSearchQuery()
+    view.dispatch({ effects: setSearchQuery.of(query) })
+    if (command && query.valid && query.search) command(view)
+    setSearchStats(getSearchStats(view, query))
+  }, [buildSearchQuery])
+
+  const closeSearch = useCallback(() => {
+    setShowSearch(false)
+    setSearchStats({ current: 0, total: 0, error: null })
+
+    const view = editorViewRef.current
+    if (view) {
+      view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: '' })) })
+      view.focus()
+    }
+  }, [])
+
+  const handleSearchKeyDown = (event, enterCommand = findNext) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeSearch()
+      return
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      updateSearch(event.shiftKey && enterCommand === findNext ? findPrevious : enterCommand)
+    }
+  }
+
+  const handleEditorUpdate = useCallback((update) => {
+    if (showSearch && (update.docChanged || update.selectionSet)) {
+      const query = buildSearchQuery()
+      setSearchStats(getSearchStats(update.view, query))
+    }
+
+    if (!IS_ELECTRON || !syncScroll || !update.viewportChanged || !previewScrollRef.current) return
+    if (syncFrameRef.current) window.cancelAnimationFrame(syncFrameRef.current)
+
+    syncFrameRef.current = window.requestAnimationFrame(() => {
+      syncFrameRef.current = null
+      const view = editorViewRef.current
+      const preview = previewScrollRef.current
+      if (!view || !preview) return
+
+      const lineBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop)
+      const sourceLine = view.state.doc.lineAt(lineBlock.from).number
+      const target = getPreviewTarget(previewAnchorsRef.current, sourceLine)
+      const maxScroll = Math.max(0, preview.scrollHeight - preview.clientHeight)
+      preview.scrollTop = Math.min(maxScroll, Math.max(0, target - 12))
+    })
+  }, [buildSearchQuery, showSearch, syncScroll])
 
   const replacePreview = useCallback((pdfBlob) => {
     const nextUrl = URL.createObjectURL(pdfBlob)
@@ -313,8 +492,55 @@ function hello() {
     return () => window.clearTimeout(timeoutId)
   }, [isLargeDocument, markdownContent])
 
+  useEffect(() => {
+    if (!showSearch) return undefined
+
+    const timeoutId = window.setTimeout(() => {
+      updateSearch()
+      searchInputRef.current?.focus()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [showSearch, updateSearch])
+
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        if (showSearch) searchInputRef.current?.focus()
+        else setShowSearch(true)
+      }
+    }
+
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [showSearch])
+
+  useEffect(() => {
+    if (!IS_ELECTRON || !previewScrollRef.current) return undefined
+
+    const frameId = window.requestAnimationFrame(() => {
+      const preview = previewScrollRef.current
+      if (!preview) return
+
+      const previewRect = preview.getBoundingClientRect()
+      const anchors = Array.from(preview.querySelectorAll('[data-source-line]'))
+        .map((element) => ({
+          line: Number(element.dataset.sourceLine),
+          top: element.getBoundingClientRect().top - previewRect.top + preview.scrollTop,
+        }))
+        .filter((anchor) => Number.isFinite(anchor.line))
+        .sort((left, right) => left.line - right.line || left.top - right.top)
+        .filter((anchor, index, values) => index === 0 || anchor.line !== values[index - 1].line)
+
+      previewAnchorsRef.current = anchors
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [previewMarkdown, settings])
+
   useEffect(() => () => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+    if (syncFrameRef.current) window.cancelAnimationFrame(syncFrameRef.current)
   }, [])
 
   const downloadPdf = async () => {
@@ -403,6 +629,15 @@ function hello() {
       selection: { anchor: from + before.length + textToInsert.length }
     })
     view.focus()
+  }
+
+  const insertHighlight = (color) => {
+    const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : settings.highlight_color
+    insertFormatting(
+      `<mark style="background-color: ${safeColor}">`,
+      '</mark>',
+      'выделенный текст'
+    )
   }
 
   const insertLineFormatting = (prefix, placeholder = '') => {
@@ -607,6 +842,14 @@ function hello() {
                 <input type="color" value={settings.background_color} onChange={(e) => updateSetting('background_color', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
               </div>
             </label>
+            <div className="w-px h-4 bg-border" />
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <span className="text-xs text-muted-foreground font-medium">Маркер</span>
+              <div className="relative h-7 w-8 rounded-md border shadow-sm overflow-hidden hover:ring-2 hover:ring-ring transition-all">
+                <div className="absolute inset-0" style={{ backgroundColor: settings.highlight_color }} />
+                <input type="color" value={settings.highlight_color} onChange={(e) => updateSetting('highlight_color', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              </div>
+            </label>
           </div>
 
           {/* Поля — выпадающее */}
@@ -674,15 +917,13 @@ function hello() {
                   >
                     <Italic className="h-3.5 w-3.5" />
                   </Button>
-                  <Button
-                    onClick={() => { insertFormatting('<mark>', '</mark>', 'выделенный текст'); setShowToolbar(false); }}
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-amber-600"
-                    title="Выделить маркером"
-                  >
-                    <Highlighter className="h-3.5 w-3.5" />
-                  </Button>
+                  <HighlightColorPicker
+                    color={settings.highlight_color}
+                    onSelect={(color) => {
+                      insertHighlight(color)
+                      setShowToolbar(false)
+                    }}
+                  />
                   <Separator orientation="vertical" className="h-5" />
                   <Button
                     onClick={() => { insertLineFormatting('# ', 'Заголовок 1'); setShowToolbar(false); }}
@@ -744,6 +985,19 @@ function hello() {
                 >
                   <Redo2 className="h-3.5 w-3.5" />
                 </Button>
+                <Button
+                  onClick={() => {
+                    if (showSearch) closeSearch()
+                    else setShowSearch(true)
+                  }}
+                  variant={showSearch ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  title="Поиск и замена (Ctrl+F)"
+                  aria-label="Поиск и замена"
+                >
+                  <SearchIcon className="h-3.5 w-3.5" />
+                </Button>
                 <Separator orientation="vertical" className="h-5" />
                 <Button
                   onClick={() => insertFormatting('**', '**', 'жирный текст')}
@@ -763,15 +1017,10 @@ function hello() {
                 >
                   <Italic className="h-3.5 w-3.5" />
                 </Button>
-                <Button
-                  onClick={() => insertFormatting('<mark>', '</mark>', 'выделенный текст')}
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 text-amber-600"
-                  title="Выделить маркером"
-                >
-                  <Highlighter className="h-3.5 w-3.5" />
-                </Button>
+                <HighlightColorPicker
+                  color={settings.highlight_color}
+                  onSelect={insertHighlight}
+                />
                 <Separator orientation="vertical" className="h-5" />
                 <Button
                   onClick={() => insertLineFormatting('# ', 'Заголовок 1')}
@@ -851,11 +1100,58 @@ function hello() {
                 </Button>
               </div>
 
+              {showSearch && (
+                <div className="flex flex-wrap items-center gap-1.5 border-b px-1 pb-2">
+                  <Input
+                    ref={searchInputRef}
+                    value={searchText}
+                    onChange={(event) => setSearchText(event.target.value)}
+                    onKeyDown={(event) => handleSearchKeyDown(event)}
+                    className="h-7 min-w-32 flex-1 text-xs"
+                    placeholder="Найти"
+                    aria-label="Текст для поиска"
+                  />
+                  <span className={`min-w-14 text-center text-xs ${searchStats.error ? 'text-destructive' : 'text-muted-foreground'}`} title={searchStats.error || undefined}>
+                    {searchStats.error ? 'Ошибка' : `${searchStats.current} / ${searchStats.total}`}
+                  </span>
+                  <Button onClick={() => updateSearch(findPrevious)} variant="ghost" size="sm" className="h-7 w-7 p-0" title="Предыдущее совпадение" aria-label="Предыдущее совпадение">
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button onClick={() => updateSearch(findNext)} variant="ghost" size="sm" className="h-7 w-7 p-0" title="Следующее совпадение" aria-label="Следующее совпадение">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button onClick={() => setSearchCaseSensitive((enabled) => !enabled)} variant={searchCaseSensitive ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 text-xs" title="Учитывать регистр">
+                    Aa
+                  </Button>
+                  <Button onClick={() => setSearchRegexp((enabled) => !enabled)} variant={searchRegexp ? 'secondary' : 'ghost'} size="sm" className="h-7 px-2 font-mono text-xs" title="Регулярное выражение">
+                    .*
+                  </Button>
+                  <Button onClick={closeSearch} variant="ghost" size="sm" className="h-7 w-7 p-0" title="Закрыть поиск" aria-label="Закрыть поиск">
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                  <Input
+                    value={replaceText}
+                    onChange={(event) => setReplaceText(event.target.value)}
+                    onKeyDown={(event) => handleSearchKeyDown(event, replaceNext)}
+                    className="h-7 min-w-32 flex-1 text-xs"
+                    placeholder="Заменить на"
+                    aria-label="Текст для замены"
+                  />
+                  <Button onClick={() => updateSearch(replaceNext)} variant="outline" size="sm" className="h-7 text-xs" disabled={!searchText || Boolean(searchStats.error)}>
+                    Заменить
+                  </Button>
+                  <Button onClick={() => updateSearch(replaceAll)} variant="outline" size="sm" className="h-7 text-xs" disabled={!searchText || Boolean(searchStats.error)}>
+                    Заменить все
+                  </Button>
+                </div>
+              )}
+
               <div className="flex-1 min-h-0 overflow-auto" onMouseUp={handleTextSelect}>
                 <CodeMirror
                   value={markdownContent}
                   onChange={handleEditorChange}
                   onCreateEditor={handleEditorCreate}
+                  onUpdate={handleEditorUpdate}
                   extensions={EDITOR_EXTENSIONS}
                   basicSetup={EDITOR_BASIC_SETUP}
                   style={EDITOR_STYLE}
@@ -871,7 +1167,18 @@ function hello() {
               {IS_ELECTRON ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 min-h-8 px-1">
-                    <span className="text-xs font-medium">HTML-предпросмотр</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium">HTML-предпросмотр</span>
+                      <Switch
+                        id="sync-scroll"
+                        checked={syncScroll}
+                        onCheckedChange={setSyncScroll}
+                        aria-label="Синхронизировать прокрутку"
+                      />
+                      <label htmlFor="sync-scroll" className="cursor-pointer text-xs text-muted-foreground">
+                        Синхронизация
+                      </label>
+                    </div>
                     <span
                       className={`text-xs ${error && !isLoading ? 'text-destructive' : 'text-muted-foreground'}`}
                       aria-live="polite"
@@ -891,7 +1198,7 @@ function hello() {
                   )}
 
                   <div className="flex-1 min-h-0 overflow-hidden border rounded-md">
-                    <MarkdownPreview content={previewMarkdown} settings={settings} />
+                    <MarkdownPreview ref={previewScrollRef} content={previewMarkdown} settings={settings} />
                   </div>
                 </>
               ) : (

@@ -5,7 +5,7 @@ const url = require('node:url');
 
 let mainWindow;
 let printWindow;
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = !app.isPackaged && process.argv.includes('--dev');
 
 const FONT_FAMILIES = {
   Inter: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -37,6 +37,7 @@ function createPrintDocument(contentHtml, settings = {}) {
   const marginLeft = clampNumber(settings.margin_left, 72, 0, 200);
   const textColor = safeColor(settings.text_color, '#000000');
   const backgroundColor = safeColor(settings.background_color, '#ffffff');
+  const highlightColor = safeColor(settings.highlight_color, '#fff176');
 
   return `<!doctype html>
 <html lang="ru">
@@ -95,7 +96,7 @@ function createPrintDocument(contentHtml, settings = {}) {
     }
 
     pre code { background: transparent; padding: 0; }
-    mark { border-radius: 2pt; background: #fff176; color: inherit; padding: 0 2pt; }
+    mark { border-radius: 2pt; background: ${highlightColor}; color: inherit; padding: 0 2pt; }
 
     blockquote {
       margin: 12pt 0;

@@ -100,7 +100,7 @@
 
 .markdown-preview-document mark {
   border-radius: 2pt;
-  background: #fff176;
+  background: var(--preview-highlight-color);
   color: inherit;
   padding: 0 2pt;
 }

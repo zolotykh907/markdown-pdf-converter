@@ -2,13 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
-import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(),tailwindcss()],
   resolve: {
     alias: {
@@ -16,7 +15,7 @@ export default defineConfig({
     },
   },
   server: {
-    open: !process.env.ELECTRON_DEV, // Не открывать браузер в Electron режиме
+    open: mode !== 'electron',
     proxy: {
       '/convert': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
@@ -32,4 +31,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

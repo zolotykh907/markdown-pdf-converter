@@ -1,30 +1,12 @@
 # Markdown to PDF Converter
 
-Веб-приложение для конвертации Markdown файлов в PDF с настраиваемыми стилями.
-
-Зачем?
-Например, чтобы удобно просматривать md файлы на телефоне, или рисовать в них 😁
+Приложение для редактирования Markdown и экспорта документов в PDF с настраиваемыми стилями.
 
 ## Требования
 
-### Вариант 1: Docker (рекомендуется)
-- Docker
-- Docker Compose
-
-На macOS можно установить через Homebrew:
-```bash
-brew install docker docker-compose
-```
-
-### Вариант 2: Локальная установка
-- Python 3.8+
-- Node.js 16+
-- macOS, Linux или Windows (с bash)
-
-На macOS можно установить через Homebrew:
-```bash
-brew install python3 node
-```
+- Desktop-сборка: Node.js 18+ и npm
+- Браузерная версия: Node.js 18+, Python 3.11+ и системные зависимости WeasyPrint
+- Docker-вариант: Docker с поддержкой `docker compose`
 
 ## Возможности
 
@@ -36,8 +18,13 @@ brew install python3 node
   - Выбор шрифта
   - Размер шрифта
   - Межстрочный интервал
-  - Цвет текста и фона
+  - Цвет текста, фона и маркера
+  - Индивидуальный цвет каждого выделенного фрагмента
   - Настройка отступов страницы
+
+✔️ Поиск и замена с учётом регистра, регулярными выражениями и счётчиком совпадений
+
+✔️ Синхронизация прокрутки редактора и HTML-предпросмотра
 
 ✔️ Автоматическое обновление при изменении текста или стилей
 
@@ -66,96 +53,57 @@ brew install python3 node
 
 ### Frontend (React)
 - **Технологии**: React, Vite, Tailwind CSS
-- **Порт**: 5175 (dev)
+- **Порт**: 5173 (dev)
 
 ### Desktop (Electron)
 - HTML-предпросмотр через React без генерации PDF при вводе
 - Экспорт через встроенный Chromium `webContents.printToPDF`
 - Python и WeasyPrint в desktop-сборку не входят
 
-## Deploy в Netlify
-
-В репозитории уже добавлен `netlify.toml`, поэтому Netlify автоматически:
-- собирает только `frontend`
-- использует команду `npm run build`
-- публикует `frontend/dist`
-
-Важно: backend (FastAPI + weasyprint) нужно хостить отдельно (например, Render/Railway/Fly.io).  
-После этого в настройках сайта Netlify задайте переменную окружения:
-
-- `VITE_BACKEND_URL=https://ваш-backend-домен`
-
-Без этой переменной frontend не сможет выполнять конвертацию в PDF.
-
 ## Быстрый старт
 
-### Вариант 1: Docker (проще всего)
-
-Запуск одной командой (рекомендуется):
+### Вариант 1: Docker
 
 ```bash
-./docker-start.sh
-```
-
-Или вручную:
-
-```bash
-docker-compose up
+docker compose up --build
 ```
 
 Приложение будет доступно по адресу http://localhost:5173
 
-Для остановки нажмите `Ctrl+C`, затем:
+Для остановки:
 ```bash
-docker-compose down
-```
-
-Для пересборки после изменений:
-```bash
-docker-compose up --build
+docker compose down
 ```
 
 ### Вариант 2: Локальная установка
 
-#### Первый запуск (настройка)
-
-```bash
-./setup.sh
-```
-
-Этот скрипт автоматически:
-- Проверит наличие Python и Node.js
-- Создаст виртуальное окружение для Python
-- Установит все необходимые зависимости для backend и frontend
-
-#### Запуск приложения
-
-```bash
-./start.sh
-```
-
-Этот скрипт запустит backend и frontend одной командой. Приложение откроется по адресу http://localhost:5173
-
-Для остановки нажмите `Ctrl+C` - это автоматически остановит оба сервера.
-
-#### Ручной запуск (опционально)
-
-Если хотите запускать backend и frontend отдельно:
-
-**Backend:**
+Установка и запуск backend:
 ```bash
 cd backend
+python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 python app.py
 ```
 Backend: http://localhost:8000
 
-**Frontend:**
+Установка и запуск frontend в другом терминале:
 ```bash
 cd frontend
+npm ci
 npm run dev
 ```
 Frontend: http://localhost:5173
+
+Для production-сборки браузерного frontend:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+Результат находится в `frontend/dist/`. Для PDF-экспорта браузерной версии отдельно запустите или разверните backend и задайте `VITE_BACKEND_URL`, если API находится на другом домене.
 
 ## Desktop приложение (macOS/Windows)
 
@@ -163,21 +111,21 @@ Frontend: http://localhost:5173
 
 ```bash
 cd frontend
-npm install
+npm ci
 cd ../electron
-npm install
+npm ci
 ```
 
 ### Запуск в режиме разработки
 
-В первом терминале:
+В первом терминале запустите Vite:
 
 ```bash
 cd frontend
-ELECTRON_DEV=1 npm run dev
+npm run dev:electron
 ```
 
-Во втором терминале:
+Во втором терминале запустите Electron:
 
 ```bash
 cd electron
@@ -195,8 +143,8 @@ npm run build:mac
 Для Windows используйте `npm run build:win` непосредственно на Windows.
 
 **Результат:**
-- macOS: `.dmg` файл для установки
-- Windows: `.exe` установщик
+- macOS Apple Silicon: `electron/dist/mac-arm64/Markdown PDF Converter.app`
+- Windows x64: установщик NSIS и portable `.exe` в `electron/dist/`
 - Двойной клик - и приложение работает без браузера!
 
 ### Что вы получите
@@ -213,11 +161,14 @@ npm run build:mac
 
 1. Откройте приложение (в браузере или desktop версию)
 2. Введите или вставьте Markdown текст в левую панель
-3. Настройте стили в правой панели:
+3. Настройте стили на верхней панели:
    - Выберите шрифт
    - Установите размер шрифта
    - Настройте межстрочный интервал
-   - Выберите цвета текста и фона
+   - Выберите цвета текста, фона и маркера
+   - Для разных цветов выделите текст, нажмите значок маркера и выберите цвет
    - Настройте отступы страницы
 4. HTML-предпросмотр автоматически обновится в правой панели
-5. Нажмите "Скачать PDF" для генерации и сохранения файла через Chromium
+5. Для поиска и замены нажмите значок лупы или `Ctrl+F` (`Cmd+F` на macOS)
+6. При необходимости отключите синхронизацию прокрутки над предпросмотром
+7. Нажмите "Скачать PDF" для генерации и сохранения файла через Chromium
