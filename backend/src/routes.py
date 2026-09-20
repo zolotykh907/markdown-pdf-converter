@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from .models import MarkdownRequest, ConversionResponse
-from .pdf_service import create_pdf_from_markdown
+from .pdf_service import create_pdf_from_html, create_pdf_from_markdown
 
 
 router = APIRouter()
@@ -16,6 +16,8 @@ async def root():
 
 def render_pdf(request: MarkdownRequest) -> bytes:
     settings = request.dict()
+    if request.rendered_html:
+        return create_pdf_from_html(request.rendered_html, settings)
     return create_pdf_from_markdown(request.content, settings)
 
 

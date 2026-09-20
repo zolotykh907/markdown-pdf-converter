@@ -337,6 +337,8 @@ function hello() {
         setError(null)
 
         try {
+          const { renderMarkdownToHtml } = await import('@/components/markdown-export.js')
+          const renderedHtml = await renderMarkdownToHtml(job.content)
           const response = await fetch(`${backendUrl}/convert/pdf`, {
             method: 'POST',
             headers: {
@@ -345,6 +347,7 @@ function hello() {
             },
             body: JSON.stringify({
               content: job.content,
+              rendered_html: renderedHtml,
               ...job.settings
             })
           })
@@ -553,7 +556,7 @@ function hello() {
       try {
         await new Promise((resolve) => window.requestAnimationFrame(resolve))
         const { renderMarkdownToHtml } = await import('@/components/markdown-export.js')
-        const html = renderMarkdownToHtml(markdownContent)
+        const html = await renderMarkdownToHtml(markdownContent)
         await window.electron.exportPdf({
           html,
           settings,

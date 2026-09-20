@@ -4,6 +4,7 @@ from typing import Optional
 
 class MarkdownRequest(BaseModel):
     content: str
+    rendered_html: Optional[str] = None
     font_family: Optional[str] = "Inter"
     font_size: Optional[int] = 12
     line_height: Optional[float] = 1.6

@@ -21,11 +21,8 @@ def get_css_font_family(font_family: str) -> str:
     return font_mapping.get(font_family, 'Arial, sans-serif')
 
 
-def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) -> bytes:
-    
-    css_font_family = get_css_font_family(settings['font_family'])
-
-    html_content = markdown.markdown(
+def markdown_to_html(markdown_content: str) -> str:
+    return markdown.markdown(
         markdown_content,
         extensions=['tables', 'fenced_code', 'codehilite'],
         extension_configs={
@@ -35,6 +32,14 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
             }
         }
     )
+
+
+def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) -> bytes:
+    return create_pdf_from_html(markdown_to_html(markdown_content), settings)
+
+
+def create_pdf_from_html(html_content: str, settings: Dict[str, Any]) -> bytes:
+    css_font_family = get_css_font_family(settings['font_family'])
     
     full_html = f"""
     <!DOCTYPE html>
@@ -131,6 +136,28 @@ def create_pdf_from_markdown(markdown_content: str, settings: Dict[str, Any]) ->
             .codehilite code {{
                 background: transparent;
                 padding: 0;
+            }}
+
+            .mermaid-diagram {{
+                max-width: 100%;
+                margin: 12pt 0;
+                text-align: center;
+                page-break-inside: avoid;
+            }}
+
+            .mermaid-diagram svg {{
+                display: inline-block;
+                max-width: 100%;
+                height: auto;
+            }}
+
+            .mermaid-diagram-error {{
+                border: 1pt solid #fca5a5;
+                border-radius: 6pt;
+                background: #f9fafb;
+                color: #b91c1c;
+                padding: 12pt;
+                text-align: left;
             }}
             
             blockquote {{

@@ -98,6 +98,38 @@
   padding: 0;
 }
 
+.markdown-preview-document .mermaid-diagram {
+  margin: 12pt 0;
+  max-width: 100%;
+  overflow: auto;
+  text-align: center;
+}
+
+.markdown-preview-document .mermaid-diagram svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-preview-document .mermaid-diagram-loading,
+.markdown-preview-document .mermaid-diagram-error {
+  border: 1pt solid #d1d5db;
+  border-radius: 6pt;
+  background: #f9fafb;
+  padding: 12pt;
+  text-align: left;
+}
+
+.markdown-preview-document .mermaid-diagram-error {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.markdown-preview-document .mermaid-diagram-error p {
+  margin-bottom: 8pt;
+  text-align: left;
+}
+
 .markdown-preview-document mark {
   border-radius: 2pt;
   background: var(--preview-highlight-color);

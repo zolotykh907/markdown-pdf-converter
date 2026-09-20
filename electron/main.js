@@ -96,6 +96,22 @@ function createPrintDocument(contentHtml, settings = {}) {
     }
 
     pre code { background: transparent; padding: 0; }
+    .mermaid-diagram {
+      max-width: 100%;
+      margin: 12pt 0;
+      overflow: auto;
+      text-align: center;
+      break-inside: avoid;
+    }
+    .mermaid-diagram svg { display: inline-block; max-width: 100%; height: auto; }
+    .mermaid-diagram-error {
+      border: 1pt solid #fca5a5;
+      border-radius: 6pt;
+      background: #f9fafb;
+      color: #b91c1c;
+      padding: 12pt;
+      text-align: left;
+    }
     mark { border-radius: 2pt; background: ${highlightColor}; color: inherit; padding: 0 2pt; }
 
     blockquote {

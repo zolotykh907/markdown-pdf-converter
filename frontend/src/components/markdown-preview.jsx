@@ -1,6 +1,7 @@
-import { forwardRef, memo } from 'react'
+import { forwardRef, isValidElement, memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import MermaidDiagram from './mermaid-diagram.jsx'
 import './markdown-preview.css'
 
 const FONT_FAMILIES = {
@@ -65,11 +66,53 @@ function createSourceElement(tagName) {
 }
 
 const sourceComponents = Object.fromEntries(
-  ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'blockquote', 'pre', 'ul', 'ol', 'li', 'table', 'tr', 'hr']
+  ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'blockquote', 'ul', 'ol', 'li', 'table', 'tr', 'hr']
     .map((tagName) => [tagName, createSourceElement(tagName)])
 )
 
-const markdownComponents = {
+function getMermaidChart(children) {
+  const codeElement = Array.isArray(children)
+    ? children.find((child) => isValidElement(child))
+    : children
+
+  if (!isValidElement(codeElement) || !/\blanguage-mermaid\b/.test(codeElement.props.className || '')) {
+    return null
+  }
+
+  const code = Array.isArray(codeElement.props.children)
+    ? codeElement.props.children.join('')
+    : String(codeElement.props.children || '')
+
+  return code.replace(/\n$/, '')
+}
+
+function MermaidExportPlaceholder({ chart, sourceLine }) {
+  return (
+    <div
+      className="mermaid-diagram"
+      data-mermaid-source={chart}
+      {...(sourceLine ? { 'data-source-line': sourceLine } : {})}
+    >
+      <pre><code>{chart}</code></pre>
+    </div>
+  )
+}
+
+function createPreElement({ sourcePositions, renderMermaid }) {
+  return function PreElement({ node, children, ...props }) {
+    const chart = getMermaidChart(children)
+    const sourceLine = node?.position?.start?.line
+
+    if (chart !== null) {
+      if (renderMermaid) return <MermaidDiagram chart={chart} sourceLine={sourcePositions ? sourceLine : undefined} />
+      return <MermaidExportPlaceholder chart={chart} sourceLine={sourcePositions ? sourceLine : undefined} />
+    }
+
+    return <pre {...props} {...(sourcePositions && sourceLine ? { 'data-source-line': sourceLine } : {})}>{children}</pre>
+  }
+}
+
+const baseMarkdownComponents = {
   a: ({ node, ...props }) => {
     void node
     return <a {...props} target="_blank" rel="noreferrer" />
@@ -84,16 +127,33 @@ const markdownComponents = {
   },
 }
 
-const previewMarkdownComponents = {
-  ...sourceComponents,
-  ...markdownComponents,
+const markdownComponents = {
+  ...baseMarkdownComponents,
+  pre: createPreElement({ sourcePositions: false, renderMermaid: true }),
 }
 
-export function MarkdownContent({ content, sourcePositions = false }) {
+const previewMarkdownComponents = {
+  ...sourceComponents,
+  ...baseMarkdownComponents,
+  pre: createPreElement({ sourcePositions: true, renderMermaid: true }),
+}
+
+const exportMarkdownComponents = {
+  ...baseMarkdownComponents,
+  pre: createPreElement({ sourcePositions: false, renderMermaid: false }),
+}
+
+export function MarkdownContent({ content, sourcePositions = false, forExport = false }) {
+  const components = forExport
+    ? exportMarkdownComponents
+    : sourcePositions
+      ? previewMarkdownComponents
+      : markdownComponents
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMark]}
-      components={sourcePositions ? previewMarkdownComponents : markdownComponents}
+      components={components}
     >
       {content}
     </ReactMarkdown>
